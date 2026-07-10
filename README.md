@@ -92,11 +92,149 @@
 <!-- DB 스키마, JSON 구조, 파일 저장 방식 등 -->
 
 ### API / 외부 서비스 연동
+## 1. 인증 API (REST)
 
-| Method / 방식 | Endpoint / 서비스 | 설명 | 요청 | 응답 | 비고 |
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
-|  |  |  |  |  |  |
+| POST | `/auth/register` | 이메일 회원가입 | `{ email, password, nickname }` | `{ userId, nickname, provider:"email", accessToken, refreshToken, expiresIn }` | 인증 불필요 |
+| POST | `/auth/login` | 이메일 로그인 | `{ email, password }` | `{ userId, nickname, provider:"email", accessToken, refreshToken, expiresIn }` | 인증 불필요, 실패 시 401 |
+| POST | `/auth/oauth/kakao` | 카카오 로그인/가입 | `{ kakaoAccessToken }` | `{ userId, nickname, provider:"kakao", accessToken, refreshToken, expiresIn, isNewUser }` | Flutter `kakao_flutter_sdk`로 발급받은 토큰을 서버가 카카오 API로 검증 |
+| POST | `/auth/oauth/naver` | 네이버 로그인/가입 | `{ naverAccessToken }` | `{ userId, nickname, provider:"naver", accessToken, refreshToken, expiresIn, isNewUser }` | Flutter `flutter_naver_login` 사용, 서버가 네이버 API로 검증 |
+| POST | `/auth/oauth/google` | 구글 로그인/가입 | `{ idToken }` | `{ userId, nickname, provider:"google", accessToken, refreshToken, expiresIn, isNewUser }` | Flutter `google_sign_in` 사용, 서버가 Google idToken 서명 검증 |
+| POST | `/auth/link/{provider}` | 로그인 상태에서 소셜 계정 추가 연동 | `{ providerToken }` | `{ linkedProviders: string[] }` | provider: `kakao`\|`naver`\|`google`, 선택 기능 |
+| POST | `/auth/refresh` | Access Token 재발급 | `{ refreshToken }` | `{ accessToken, expiresIn }` | Refresh Token 필요 |
+| POST | `/auth/logout` | 로그아웃 | 없음 | 204 No Content | Access Token 필요, SocialHub 연결도 함께 종료 |
 
+---
+## 2. 유저 API (REST)
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| GET | `/users/me` | 내 프로필 조회 | 없음 | `{ userId, nickname, provider, linkedProviders[], avatarUrl, createdAt }` | 인증 필요 |
+| PATCH | `/users/me` | 닉네임/아바타 수정 | `{ nickname?, avatarUrl? }` | 수정된 프로필 객체 | 인증 필요 |
+| GET | `/users/{userId}/stats` | 전적 조회 | 없음 | `{ userId, gamesPlayed, wins, avgScore, avgTurns }` | 인증 필요 |
+| GET | `/users/search` | 닉네임으로 유저 검색 | Query: `nickname` | `{ users: [{ userId, nickname, avatarUrl }] }` | 친구 추가 시 사용 |
+
+---
+
+## 3. 친구(Friend) API (REST)
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| GET | `/friends` | 내 친구 목록 조회 | Query: `status?("online"\|"offline"\|"in_game")` | `{ friends: [{ userId, nickname, avatarUrl, status }] }` | 인증 필요, 상태는 SocialHub 프레즌스와 연동 |
+| POST | `/friends/requests` | 친구 요청 보내기 | `{ targetUserId }` | `{ requestId, status:"PENDING", createdAt }` | 자기 자신 요청 시 400(`SELF_FRIEND_REQUEST`), 이미 친구면 409(`ALREADY_FRIENDS`) |
+| GET | `/friends/requests` | 친구 요청 목록 조회 | Query: `direction("incoming"\|"outgoing")` | `{ requests: [{ requestId, fromUserId, toUserId, status, createdAt }] }` | 인증 필요 |
+| POST | `/friends/requests/{requestId}/accept` | 친구 요청 수락 | 없음 | `{ userId, nickname, status:"online" }` | 양쪽 친구 목록에 상호 등록됨 |
+| POST | `/friends/requests/{requestId}/reject` | 친구 요청 거절 | 없음 | 204 No Content | |
+| DELETE | `/friends/{friendUserId}` | 친구 삭제 | 없음 | 204 No Content | 상호 삭제(양방향) |
+
+---
+## 4. 방(Room) 관리 API (REST)
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| POST | `/rooms` | 방 생성 | `{ maxPlayers?(2~4,기본4), isPrivate?, password?, ruleset?("official"\|"casual") }` | `{ roomId, hostId, status:"WAITING", maxPlayers, players[], createdAt }` | 인증 필요, 생성자가 방장 |
+| GET | `/rooms` | 방 목록 조회 | Query: `status?("WAITING"\|"PLAYING"), page?, limit?(기본20)` | `{ rooms:[...], total, page }` | 인증 필요, 친구 여부와 무관하게 매칭 가능 |
+| GET | `/rooms/{roomId}` | 방 상세 조회 | 없음 | Room 객체(생성 응답과 동일 구조) | 인증 필요 |
+| POST | `/rooms/{roomId}/join` | 방 참가(좌석 예약) | `{ password? }` | 갱신된 Room 객체 | 인증 필요, 정원/비밀번호 검증(409/403) |
+| POST | `/rooms/{roomId}/leave` | 방 퇴장 | 없음 | 204 No Content | 인증 필요 |
+| POST | `/rooms/{roomId}/start` | 게임 시작 | 없음 | `{ gameId, phase:"PLAYING" }` | 방장만 가능(403), 이후 SignalR로 진행 |
+| DELETE | `/rooms/{roomId}` | 방 삭제 | 없음 | 204 No Content | 방장만, 시작 전에만 가능(409) |
+
+---
+## 5. 게임 조회 API (REST, 읽기 전용)
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| GET | `/games/{gameId}/state` | 게임 상태 스냅샷 조회 | 없음 | GameState 객체(10.1 스키마 참고) | 관전/디버깅/재접속 폴백용 |
+| GET | `/games/{gameId}/history` | 턴별 액션 로그 조회 | Query: `page?, limit?` | `{ actions:[{ turnNumber, playerId, actionType, payload, ts }], total }` | 리플레이용 |
+
+---
+## 6. GameHub 메서드 (Client → Server, Flutter `hubConnection.invoke()`)
+
+Hub: `/hubs/game` · 인터페이스: `IGameHub`
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| INVOKE | `JoinRoom` | Hub Group 구독(입장) | `roomId: string` | 없음(비동기로 `StateSync` full 콜백 수신) | 최초 입장 시 반드시 호출, SocialHub에는 자동으로 `"in_game"` 프레즌스 반영 |
+| INVOKE | `LeaveRoom` | Group 탈퇴 | `roomId: string` | 없음 | |
+| INVOKE | `StartGame` | 게임 시작 | `roomId: string` | 없음(그룹 전체에 `StateSync` 브로드캐스트) | 방장만, 아니면 `HubException` |
+| INVOKE | `TakeTokens` | 토큰 획득 | `{ gems: Gem[] }` (서로 다른 3색 각1 또는 동색 2개) | 없음(브로드캐스트) | 실패 시 `HubException`(`INVALID_TOKEN_SELECTION`) |
+| INVOKE | `PurchaseCard` | 카드 구매 | `{ cardId: string, source: "Board"\|"Reserved" }` | 없음(브로드캐스트) | 실패 시 `HubException`(`INSUFFICIENT_COST` 등) |
+| INVOKE | `ReserveCard` | 카드 예약 | `{ cardId?: string, tier?: 1\|2\|3 }` (둘 중 하나) | 없음(브로드캐스트) | 예약 3장 초과 시 `HubException`(`RESERVE_LIMIT_EXCEEDED`) |
+| INVOKE | `DiscardTokens` | 토큰 10개 초과 시 반납 | `{ gems: Gem[] }` | 없음(브로드캐스트) | 초과분 미반납 시 턴 종료 불가 |
+| INVOKE | `ClaimNoble` | 동시 조건 충족 시 귀족 선택 | `nobleId: string` | 없음(브로드캐스트 `NobleAwarded`) | `NobleChoiceRequired` 수신 후에만 유효 |
+| INVOKE | `SendChatMessage` | 인게임 채팅 전송 | `{ text: string }` | 없음(브로드캐스트 `ChatMessage`) | 서버가 발신자의 친구 목록을 조회해 **같은 방에 있는 친구에게만** 전달(친구 아닌 참가자에게는 미전달) |
+| INVOKE | `SendEmote` | 감정표현(이모티콘) 전송 | `{ emoteId: string }` | 없음(브로드캐스트 `EmoteReceived`) | 친구 제한 없이 방 전체에 브로드캐스트. `emoteId` 목록은 10.4 참고 |
+| INVOKE | `RequestResync` | 재접속 시 상태 재동기화 | `lastSequence: int` | 호출자에게만 `StateSync`(full 또는 delta) 콜백 | 재연결(`onreconnected`) 직후 호출 |
+
+---
+## 7. GameHub 콜백 (Server → Client, Flutter `hubConnection.on()`)
+
+인터페이스: `IGameClient`
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| ON | `StateSync` | 게임 상태 동기화 | - | `{ type:"full"\|"delta", state?, patch?, sequence }` | `patch`는 JSON Patch(RFC6902) |
+| ON | `ActionResult` | 직전 호출 처리 결과 | - | `{ success, error?, patch? }` | 대부분 `StateSync` delta로 대체 가능(선택 구현) |
+| ON | `TurnChanged` | 턴 전환 알림 | - | `{ currentPlayerId, turnNumber }` | |
+| ON | `NobleAwarded` | 귀족 타일 자동 획득 | - | `{ playerId, nobleId }` | |
+| ON | `NobleChoiceRequired` | 귀족 동시 충족, 선택 필요 | - | `{ playerId, candidateNobleIds: string[] }` | `ClaimNoble` 호출 유도 |
+| ON | `PlayerJoined` | 방 인원 입장 | - | `{ userId, nickname }` | |
+| ON | `PlayerLeft` | 방 인원 퇴장 | - | `{ userId, nickname }` | |
+| ON | `FinalRoundTriggered` | 15점 달성, 마지막 라운드 진입 | - | `{ triggeredBy, lastTurnPlayerId }` | |
+| ON | `GameOver` | 게임 종료 | - | `{ winnerId, finalScores: [{userId,score}], tieBreakReason? }` | |
+| ON | `ChatMessage` | 채팅 수신 | - | `{ playerId, text, ts }` | **발신자와 친구인 클라이언트에게만** push됨 |
+| ON | `EmoteReceived` | 감정표현 수신 | - | `{ playerId, emoteId, ts }` | 방 전체 브로드캐스트(친구 제한 없음) |
+| ON | `ErrorOccurred` | 비동기 오류 통지 | - | `{ code, message }` | `invoke()` 예외와 별개(세션 강제종료 등) |
+## 8. SocialHub (친구 · 로비 채팅 전용, 신규)
+
+Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialClient`(Server→Client)
+
+이 Hub는 특정 게임 방(Room)에 종속되지 않고 **로그인 직후부터 앱이 살아있는 동안(로비 포함) 상시 연결을 유지**하며, 친구 프레즌스·요청 알림·친구 간 1:1 채팅을 처리한다. `GameHub`와는 별도 연결이며, 로그아웃 또는 앱 종료 시에만 해제한다.
+
+### 8.1 Client → Server
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| INVOKE | `SendFriendMessage` | 친구에게 1:1 채팅 전송(로비/게임 화면 무관) | `{ toUserId: string, text: string }` | 없음(상대에게 `FriendMessageReceived` 전달) | 친구 관계 아니면 `HubException`(`NOT_FRIENDS`) |
+| INVOKE | `SetPresence` | 내 접속 상태 갱신 | `{ status: "online"\|"away" }` | 없음(친구들에게 `FriendStatusChanged` 브로드캐스트) | `GameHub.JoinRoom` 호출 시 서버가 자동으로 `"in_game"`으로 전환, `LeaveRoom` 시 원복 |
+
+### 8.2 Server → Client
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| ON | `FriendRequestReceived` | 친구 요청 수신 | - | `{ requestId, fromUserId, fromNickname }` | REST `POST /friends/requests` 발생 시 실시간 push |
+| ON | `FriendRequestAccepted` | 내가 보낸 요청이 수락됨 | - | `{ friendUserId, friendNickname }` | 요청을 보낸 쪽에 push |
+| ON | `FriendStatusChanged` | 친구 접속 상태 변경 | - | `{ friendUserId, status: "online"\|"offline"\|"in_game"\|"away" }` | 로비 친구 목록 실시간 갱신용 |
+| ON | `FriendMessageReceived` | 친구 1:1 채팅 수신 | - | `{ fromUserId, text, ts }` | 로비/게임 어느 화면에서도 수신되므로 앱 전역 리스너로 구독 권장 |
+
+---
+
+## 9. 에러 코드
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| - | `AUTH_INVALID_TOKEN` | 인증 실패 | - | HTTP 401 또는 `HubException` | 만료/위조 토큰 |
+| - | `OAUTH_VERIFICATION_FAILED` | 소셜 로그인 토큰 검증 실패 | - | HTTP 401 | 카카오/네이버/구글 API 검증 실패 |
+| - | `ROOM_NOT_FOUND` | 방 없음 | - | HTTP 404 | 잘못된 roomId |
+| - | `ROOM_FULL` | 방 인원 초과 | - | HTTP 409 | maxPlayers 도달 |
+| - | `NOT_YOUR_TURN` | 턴 순서 위반 | - | `HubException` | currentPlayerId 불일치 |
+| - | `INVALID_TOKEN_SELECTION` | 토큰 획득 규칙 위반 | - | `HubException` | 3색 미충족/동색 4개 미만 |
+| - | `TOKEN_LIMIT_EXCEEDED` | 토큰 10개 초과 | - | `HubException` | 반납 없이 턴 종료 시도 |
+| - | `INSUFFICIENT_COST` | 구매 비용 부족 | - | `HubException` | 보석+할인+골드 합 부족 |
+| - | `RESERVE_LIMIT_EXCEEDED` | 예약 3장 초과 | - | `HubException` | |
+| - | `CARD_NOT_FOUND` | 카드 없음/이미 소비 | - | `HubException` | 잘못된 cardId |
+| - | `CARD_NOT_OWNED` | 예약 카드 소유권 불일치 | - | `HubException` | 타인의 예약 카드 구매 시도 |
+| - | `NOBLE_NOT_ELIGIBLE` | 귀족 조건 미충족 | - | `HubException` | 임의 nobleId 요청 |
+| - | `EMOTE_INVALID` | 정의되지 않은 emoteId | - | `HubException` | 10.4 목록에 없는 값 |
+| - | `NOT_FRIENDS` | 친구 아닌 대상에게 DM/채팅 시도 | - | `HubException` | `SendFriendMessage` 대상, 인게임 채팅 필터링 시에도 사용 |
+| - | `SELF_FRIEND_REQUEST` | 자기 자신에게 친구 요청 | - | HTTP 400 | |
+| - | `ALREADY_FRIENDS` | 이미 친구인 상대에게 요청 | - | HTTP 409 | |
+| - | `FRIEND_REQUEST_NOT_FOUND` | 잘못된 requestId | - | HTTP 404 | |
+| - | `INVALID_PAYLOAD` | 스키마 검증 실패 | - | HTTP 400 / `HubException` | 필드 누락/타입 오류 |
+| - | `RATE_LIMITED` | 요청 과다 | - | HTTP 429 / `HubException` | |
+| - | `INTERNAL_ERROR` | 서버 내부 오류 | - | HTTP 500 | |
 ---
 
 ## 산출물 및 실행 방법
