@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Auth API 테스트</title>
+<script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    max-width: 720px;
+    margin: 40px auto;
+    padding: 0 16px;
+    background: #f6f7f9;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 20px; }
+  section {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+  }
+  h2 { font-size: 15px; margin: 0 0 10px; color: #333; }
+  label { display: block; font-size: 13px; margin-top: 8px; color: #555; }
+  input {
+    width: 100%;
+    padding: 8px;
+    margin-top: 4px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 200px; }
+  button {
+    margin-top: 10px;
+    margin-right: 6px;
+    padding: 8px 14px;
+    border: none;
+    border-radius: 4px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { background: #1d4ed8; }
+  button.secondary { background: #6b7280; }
+  button.secondary:hover { background: #4b5563; }
+  button.danger { background: #dc2626; }
+  button.danger:hover { background: #b91c1c; }
+  .status {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .status.ok { background: #dcfce7; color: #166534; }
+  .status.fail { background: #fee2e2; color: #991b1b; }
+  .status.pending { background: #e5e7eb; color: #374151; }
+  pre {
+    background: #0f172a;
+    color: #d1e7ff;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    overflow-x: auto;
+    margin-top: 8px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .token-box {
+    font-size: 11px;
+    background: #f1f5f9;
+    padding: 8px;
+    border-radius: 4px;
+    margin-top: 8px;
+    word-break: break-all;
+    color: #334155;
+  }
+  .muted { color: #9ca3af; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Auth API 테스트 프론트엔드</h1>
+<p class="muted">API base: <span id="apiBase"></span> (같은 오리진으로 서빙되므로 별도 CORS 설정 불필요)</p>
+
+<section>
+  <h2>현재 보유 토큰</h2>
+  <div class="token-box">
+    <div><strong>Access Token:</strong> <span id="accessTokenView">없음</span></div>
+    <div><strong>Refresh Token:</strong> <span id="refreshTokenView">없음</span></div>
+    <div><strong>만료 시각:</strong> <span id="expiresAtView">-</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>1. 회원가입 (POST /auth/register)</h2>
+  <div class="row">
+    <div>
+      <label>Email</label>
+      <input id="regEmail" type="email" placeholder="test@example.com">
+    </div>
+    <div>
+      <label>Password (6자 이상)</label>
+      <input id="regPassword" type="password" placeholder="password123">
+    </div>
+  </div>
+  <button onclick="register()">회원가입</button>
+  <span id="regStatus" class="status" style="display:none"></span>
+  <pre id="regResult" style="display:none"></pre>
+</section>
+
+<section>
+  <h2>2. 로그인 (POST /auth/login)</h2>
+  <div class="row">
+    <div>
+      <label>Email</label>
+      <input id="loginEmail" type="email" placeholder="test@example.com">
+    </div>
+    <div>
+      <label>Password</label>
+      <input id="loginPassword" type="password" placeholder="password123">
+    </div>
+  </div>
+  <button onclick="login()">로그인</button>
+  <span id="loginStatus" class="status" style="display:none"></span>
+  <pre id="loginResult" style="display:none"></pre>
+</section>
+
+<section>
+  <h2>3. 내 정보 확인 (GET /auth/me, access token 사용)</h2>
+  <button onclick="me()">내 정보 조회</button>
+  <span id="meStatus" class="status" style="display:none"></span>
+  <pre id="meResult" style="display:none"></pre>
+</section>
+
+<section>
+  <h2>4. 토큰 재발급 (POST /auth/refresh, refresh token 사용)</h2>
+  <button onclick="refresh()">토큰 갱신</button>
+  <span id="refreshStatus" class="status" style="display:none"></span>
+  <pre id="refreshResult" style="display:none"></pre>
+</section>
+
+<section>
+  <h2>5. 로그아웃 (POST /auth/logout, refresh token 사용)</h2>
+  <button class="danger" onclick="logout()">로그아웃</button>
+  <button class="secondary" onclick="clearTokens()">클라이언트 토큰만 지우기</button>
+  <span id="logoutStatus" class="status" style="display:none"></span>
+  <pre id="logoutResult" style="display:none"></pre>
+</section>
+
+<h1 style="font-size:16px;margin-top:32px;">방(Room) 테스트</h1>
+<p class="muted">아래 기능은 모두 access token이 필요합니다 (먼저 로그인하세요).</p>
+
+<section>
+  <h2>6. 방 생성 (POST /rooms)</h2>
+  <div class="row">
+    <div>
+      <label>최대 인원 (2~4)</label>
+      <input id="roomMaxPlayers" type="number" min="2" max="4" value="4">
+    </div>
+    <div>
+      <label>룰셋</label>
+      <select id="roomRuleset">
+        <option value="official">official</option>
+        <option value="casual">casual</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label><input id="roomIsPrivate" type="checkbox" style="width:auto;display:inline-block;margin-right:6px;">비공개 방</label>
+    </div>
+    <div>
+      <label>비밀번호 (비공개 방인 경우)</label>
+      <input id="roomPassword" type="text" placeholder="1234">
+    </div>
+  </div>
+  <button onclick="createRoom()">방 생성</button>
+  <span id="createRoomStatus" class="status" style="display:none"></span>
+  <pre id="createRoomResult" style="display:none"></pre>
+</section>
+
+<section>
+  <h2>7. 방 목록 조회 (GET /rooms)</h2>
+  <div class="row">
+    <div>
+      <label>상태 필터</label>
+      <select id="roomListStatus">
+        <option value="">전체</option>
+        <option value="WAITING">WAITING</option>
+        <option value="PLAYING">PLAYING</option>
+      </select>
+    </div>
+  </div>
+  <button onclick="listRooms()">목록 새로고침</button>
+  <span id="listRoomsStatus" class="status" style="display:none"></span>
+  <div id="roomListView"></div>
+  <pre id="listRoomsResult" style="display:none"></pre>
+</section>
+
+<section>
+  <h2>8~11. 방 상세 조회 / 참가 / 퇴장 / 삭제</h2>
+  <label>대상 방 ID</label>
+  <input id="targetRoomId" type="number" placeholder="위 목록에서 [선택]을 누르면 자동 입력됩니다">
+  <label>참가 비밀번호 (비공개 방 참가 시)</label>
+  <input id="targetRoomPassword" type="text" placeholder="1234">
+  <div style="margin-top:10px">
+    <button onclick="getRoom()">상세 조회</button>
+    <button onclick="joinRoom()">참가</button>
+    <button class="secondary" onclick="leaveRoom()">퇴장</button>
+    <button class="danger" onclick="deleteRoom()">삭제</button>
+  </div>
+  <span id="roomActionStatus" class="status" style="display:none"></span>
+  <pre id="roomActionResult" style="display:none"></pre>
+</section>
+
+<section>
+  <h2>12. SignalR 실시간 브로드캐스트 (Hub: /hubs/room)</h2>
+  <p class="muted">
+    연결 상태: <strong id="hubStatusView">연결 안 됨</strong> · "대상 방 ID" 입력란을 공유해서 사용합니다.<br>
+    위 6·9번(방 생성/참가)에 성공하면 연결과 그룹 참여가 자동으로 실행됩니다. 아래 버튼은 수동으로 다시 실행하고 싶을 때 사용하세요.
+  </p>
+  <button onclick="connectHub()">수동 연결</button>
+  <button onclick="hubJoinRoom()">대상 방 그룹 참여</button>
+  <button class="secondary" onclick="hubLeaveRoom()">대상 방 그룹 나가기</button>
+  <div class="row" style="margin-top:10px;">
+    <div>
+      <label>메시지</label>
+      <input id="hubMessageInput" type="text" placeholder="안녕하세요!">
+    </div>
+  </div>
+  <button onclick="hubSendMessage()">브로드캐스트 전송</button>
+  <span id="hubStatus" class="status" style="display:none"></span>
+  <pre id="hubResult" style="display:none"></pre>
+  <div id="hubLog" style="margin-top:10px;background:#0f172a;color:#d1e7ff;padding:10px;border-radius:6px;font-size:12px;height:150px;overflow-y:auto;"></div>
+</section>
+
+<script>
+const API_BASE = window.location.origin;
+document.getElementById('apiBase').textContent = API_BASE;
+
+let accessToken = null;
+let refreshToken = null;
+let accessTokenExpiresAt = null;
+
+function renderTokens() {
+  document.getElementById('accessTokenView').textContent = accessToken
+    ? accessToken.slice(0, 24) + '...' + accessToken.slice(-8)
+    : '없음';
+  document.getElementById('refreshTokenView').textContent = refreshToken
+    ? refreshToken.slice(0, 16) + '...' + refreshToken.slice(-8)
+    : '없음';
+  document.getElementById('expiresAtView').textContent = accessTokenExpiresAt ?? '-';
+}
+
+function clearTokens() {
+  accessToken = null;
+  refreshToken = null;
+  accessTokenExpiresAt = null;
+  renderTokens();
+}
+
+function setResult(prefix, httpStatus, ok, body) {
+  const statusEl = document.getElementById(prefix + 'Status');
+  const resultEl = document.getElementById(prefix + 'Result');
+  statusEl.style.display = 'inline-block';
+  resultEl.style.display = 'block';
+  statusEl.textContent = 'HTTP ' + httpStatus;
+  statusEl.className = 'status ' + (ok ? 'ok' : 'fail');
+  resultEl.textContent = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+}
+
+async function callApi(prefix, path, options) {
+  document.getElementById(prefix + 'Status').className = 'status pending';
+  try {
+    const res = await fetch(API_BASE + path, options);
+    let body;
+    const text = await res.text();
+    try { body = text ? JSON.parse(text) : '(빈 응답 본문)'; }
+    catch { body = text; }
+    setResult(prefix, res.status, res.ok, body);
+    return { res, body };
+  } catch (err) {
+    setResult(prefix, 'ERR', false, String(err));
+    throw err;
+  }
+}
+
+async function register() {
+  const email = document.getElementById('regEmail').value;
+  const password = document.getElementById('regPassword').value;
+  await callApi('reg', '/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+async function login() {
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  const { res, body } = await callApi('login', '/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (res.ok) {
+    accessToken = body.accessToken;
+    refreshToken = body.refreshToken;
+    accessTokenExpiresAt = body.accessTokenExpiresAt;
+    renderTokens();
+  }
+}
+
+async function me() {
+  if (!accessToken) {
+    setResult('me', '-', false, '먼저 로그인해서 access token을 받아야 합니다.');
+    return;
+  }
+  await callApi('me', '/auth/me', {
+    method: 'GET',
+    headers: { 'Authorization': 'Bearer ' + accessToken },
+  });
+}
+
+async function refresh() {
+  if (!refreshToken) {
+    setResult('refresh', '-', false, '먼저 로그인해서 refresh token을 받아야 합니다.');
+    return;
+  }
+  const { res, body } = await callApi('refresh', '/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (res.ok) {
+    accessToken = body.accessToken;
+    refreshToken = body.refreshToken;
+    accessTokenExpiresAt = body.accessTokenExpiresAt;
+    renderTokens();
+  }
+}
+
+async function logout() {
+  if (!refreshToken) {
+    setResult('logout', '-', false, '먼저 로그인해서 refresh token을 받아야 합니다.');
+    return;
+  }
+  const { res } = await callApi('logout', '/auth/logout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (res.ok) {
+    clearTokens();
+  }
+}
+
+function ensureAuth(prefix) {
+  if (!accessToken) {
+    setResult(prefix, '-', false, '먼저 로그인해서 access token을 받아야 합니다.');
+    return false;
+  }
+  return true;
+}
+
+function authHeaders(extra) {
+  return Object.assign({ 'Authorization': 'Bearer ' + accessToken }, extra || {});
+}
+
+async function createRoom() {
+  if (!ensureAuth('createRoom')) return;
+  const maxPlayers = parseInt(document.getElementById('roomMaxPlayers').value, 10);
+  const ruleset = document.getElementById('roomRuleset').value;
+  const isPrivate = document.getElementById('roomIsPrivate').checked;
+  const password = document.getElementById('roomPassword').value;
+
+  const payload = { maxPlayers, ruleset, isPrivate };
+  if (isPrivate) payload.password = password;
+
+  const { res, body } = await callApi('createRoom', '/rooms', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    document.getElementById('targetRoomId').value = body.roomId;
+    listRooms();
+    await autoJoinRoomGroup(body.roomId);
+  }
+}
+
+async function listRooms() {
+  if (!ensureAuth('listRooms')) return;
+  const status = document.getElementById('roomListStatus').value;
+  const qs = status ? ('?status=' + encodeURIComponent(status)) : '';
+
+  const { res, body } = await callApi('listRooms', '/rooms' + qs, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+
+  const view = document.getElementById('roomListView');
+  view.innerHTML = '';
+  if (res.ok && body.rooms) {
+    if (body.rooms.length === 0) {
+      view.innerHTML = '<p class="muted">방이 없습니다.</p>';
+    }
+    body.rooms.forEach(room => {
+      const div = document.createElement('div');
+      div.style.cssText = 'border:1px solid #e5e7eb;border-radius:6px;padding:8px;margin-top:6px;font-size:13px;';
+      div.innerHTML =
+        '<strong>#' + room.roomId + '</strong> ' +
+        (room.isPrivate ? '🔒 ' : '') +
+        room.status + ' · ' + room.players.length + '/' + room.maxPlayers + '명 · ' + room.ruleset +
+        ' <button class="secondary" style="margin-top:0;padding:4px 8px;font-size:12px;" onclick="selectRoom(' + room.roomId + ')">선택</button>';
+      view.appendChild(div);
+    });
+  }
+}
+
+function selectRoom(roomId) {
+  document.getElementById('targetRoomId').value = roomId;
+}
+
+function readRoomId(prefix) {
+  const roomId = document.getElementById('targetRoomId').value;
+  if (!roomId) {
+    setResult(prefix, '-', false, '방 ID를 입력하세요.');
+    return null;
+  }
+  return roomId;
+}
+
+async function getRoom() {
+  if (!ensureAuth('roomAction')) return;
+  const roomId = readRoomId('roomAction');
+  if (!roomId) return;
+  await callApi('roomAction', '/rooms/' + roomId, {
+    method: 'GET',
+    headers: authHeaders(),
+  });
+}
+
+async function joinRoom() {
+  if (!ensureAuth('roomAction')) return;
+  const roomId = readRoomId('roomAction');
+  if (!roomId) return;
+  const password = document.getElementById('targetRoomPassword').value;
+  const { res } = await callApi('roomAction', '/rooms/' + roomId + '/join', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(password ? { password } : {}),
+  });
+  if (res.ok) {
+    listRooms();
+    await autoJoinRoomGroup(roomId);
+  }
+}
+
+async function leaveRoom() {
+  if (!ensureAuth('roomAction')) return;
+  const roomId = readRoomId('roomAction');
+  if (!roomId) return;
+  const { res } = await callApi('roomAction', '/rooms/' + roomId + '/leave', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (res.ok) {
+    listRooms();
+    await autoLeaveRoomGroup(roomId);
+  }
+}
+
+async function deleteRoom() {
+  if (!ensureAuth('roomAction')) return;
+  const roomId = readRoomId('roomAction');
+  if (!roomId) return;
+  const { res } = await callApi('roomAction', '/rooms/' + roomId, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (res.ok) {
+    listRooms();
+    await autoLeaveRoomGroup(roomId);
+  }
+}
+
+let hubConnection = null;
+
+function logHub(text) {
+  const log = document.getElementById('hubLog');
+  const line = document.createElement('div');
+  line.textContent = text;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+// hubConnection이 없거나 끊겨 있으면 새로 연결한다. 이미 연결돼 있으면 그대로 재사용한다.
+async function ensureHubConnected() {
+  if (hubConnection && hubConnection.state === signalR.HubConnectionState.Connected) {
+    return true;
+  }
+  if (!accessToken) {
+    setResult('hub', '-', false, '먼저 로그인해서 access token을 받아야 합니다.');
+    return false;
+  }
+  if (hubConnection) {
+    await hubConnection.stop();
+  }
+
+  hubConnection = new signalR.HubConnectionBuilder()
+    .withUrl(API_BASE + '/hubs/room', { accessTokenFactory: () => accessToken })
+    .withAutomaticReconnect()
+    .build();
+
+  hubConnection.on('ReceiveMessage', payload => {
+    logHub('[room ' + payload.roomId + '] ' + payload.email + ': ' + payload.message);
+  });
+
+  hubConnection.onclose(() => {
+    document.getElementById('hubStatusView').textContent = '연결 끊김';
+  });
+
+  try {
+    await hubConnection.start();
+    document.getElementById('hubStatusView').textContent = '연결됨';
+    return true;
+  } catch (err) {
+    setResult('hub', 'ERR', false, String(err));
+    return false;
+  }
+}
+
+async function connectHub() {
+  const ok = await ensureHubConnected();
+  if (ok) setResult('hub', 'OK', true, 'SignalR 연결 성공');
+}
+
+async function hubJoinRoom() {
+  const roomId = readRoomId('hub');
+  if (!roomId) return;
+  const ok = await ensureHubConnected();
+  if (!ok) return;
+  try {
+    await hubConnection.invoke('JoinRoom', parseInt(roomId, 10));
+    logHub('방 ' + roomId + ' 그룹에 참여했습니다.');
+    setResult('hub', 'OK', true, '방 ' + roomId + ' 그룹 참여 완료');
+  } catch (err) {
+    setResult('hub', 'ERR', false, String(err));
+  }
+}
+
+async function hubLeaveRoom() {
+  if (!hubConnection) { setResult('hub', '-', false, '먼저 연결하세요.'); return; }
+  const roomId = readRoomId('hub');
+  if (!roomId) return;
+  try {
+    await hubConnection.invoke('LeaveRoom', parseInt(roomId, 10));
+    logHub('방 ' + roomId + ' 그룹에서 나갔습니다.');
+    setResult('hub', 'OK', true, '방 ' + roomId + ' 그룹 나가기 완료');
+  } catch (err) {
+    setResult('hub', 'ERR', false, String(err));
+  }
+}
+
+async function hubSendMessage() {
+  const roomId = readRoomId('hub');
+  if (!roomId) return;
+  const ok = await ensureHubConnected();
+  if (!ok) return;
+  const message = document.getElementById('hubMessageInput').value;
+  try {
+    await hubConnection.invoke('BroadcastMessage', parseInt(roomId, 10), message);
+    setResult('hub', 'OK', true, '메시지 전송 완료');
+  } catch (err) {
+    setResult('hub', 'ERR', false, String(err));
+  }
+}
+
+// 방 생성/참가에 성공하면 자동으로 허브에 연결하고 해당 방 그룹에 들어간다.
+async function autoJoinRoomGroup(roomId) {
+  const ok = await ensureHubConnected();
+  if (!ok) return;
+  try {
+    await hubConnection.invoke('JoinRoom', parseInt(roomId, 10));
+    logHub('(자동) 방 ' + roomId + ' 그룹에 참여했습니다.');
+  } catch (err) {
+    logHub('(자동) 방 ' + roomId + ' 그룹 참여 실패: ' + err.message);
+  }
+}
+
+// 방 퇴장/삭제에 성공하면 자동으로 해당 방 그룹에서 나간다.
+async function autoLeaveRoomGroup(roomId) {
+  if (!hubConnection || hubConnection.state !== signalR.HubConnectionState.Connected) return;
+  try {
+    await hubConnection.invoke('LeaveRoom', parseInt(roomId, 10));
+    logHub('(자동) 방 ' + roomId + ' 그룹에서 나갔습니다.');
+  } catch (err) {
+    logHub('(자동) 방 ' + roomId + ' 그룹 나가기 실패: ' + err.message);
+  }
+}
+
+renderTokens();
+</script>
+
+</body>
+</html>

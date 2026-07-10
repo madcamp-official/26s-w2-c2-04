@@ -1,0 +1,25 @@
+@Backend_HostAddress = http://localhost:5047
+
+### Register
+POST {{Backend_HostAddress}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "test3@example.com",
+  "password": "secret123"
+}
+
+### Login
+POST {{Backend_HostAddress}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "test3@example.com",
+  "password": "secret123"
+}
+
+### Me (replace {{accessToken}} with the token from Login response)
+GET {{Backend_HostAddress}}/auth/me
+Authorization: Bearer {{accessToken}}
+
+###
