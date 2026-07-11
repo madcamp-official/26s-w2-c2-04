@@ -38,13 +38,13 @@ class RoomService {
     return RoomListResponse.fromJson(jsonDecode(res.body));
   }
 
-  Future<GameRoom> getRoom(String roomId) async {
+  Future<GameRoom> getRoom(int roomId) async {
     final res = await _client.get('/rooms/$roomId');
     ApiClient.ensureOk(res, '방 정보를 불러오지 못했습니다.');
     return GameRoom.fromJson(jsonDecode(res.body));
   }
 
-  Future<GameRoom> joinRoom(String roomId, {String? password}) async {
+  Future<GameRoom> joinRoom(int roomId, {String? password}) async {
     final res = await _client.post(
       '/rooms/$roomId/join',
       body: password == null ? {} : {'password': password},
@@ -53,20 +53,23 @@ class RoomService {
     return GameRoom.fromJson(jsonDecode(res.body));
   }
 
-  Future<void> leaveRoom(String roomId) async {
+  Future<void> leaveRoom(int roomId) async {
     final res = await _client.post('/rooms/$roomId/leave');
     ApiClient.ensureOk(res, '방 퇴장에 실패했습니다.');
   }
 
   /// 방장이 게임을 시작합니다. 이후 진행은 GameHub의 JoinRoom/StateSync로 이어집니다.
-  Future<({String gameId, String phase})> startGame(String roomId) async {
+  Future<({int gameId, String phase})> startGame(int roomId) async {
     final res = await _client.post('/rooms/$roomId/start');
     ApiClient.ensureOk(res, '게임 시작에 실패했습니다.');
     final json = jsonDecode(res.body);
-    return (gameId: json['gameId'] as String, phase: json['phase'] as String);
+    return (
+      gameId: (json['gameId'] as num).toInt(),
+      phase: json['phase'] as String,
+    );
   }
 
-  Future<void> deleteRoom(String roomId) async {
+  Future<void> deleteRoom(int roomId) async {
     final res = await _client.delete('/rooms/$roomId');
     ApiClient.ensureOk(res, '방 삭제에 실패했습니다.');
   }

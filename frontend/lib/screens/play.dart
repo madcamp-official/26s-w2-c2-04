@@ -123,6 +123,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
         GameConnecting() => const Center(child: CircularProgressIndicator()),
         GameError(:final message) => Center(child: Text('연결 실패: $message')),
         GameConnected(:final gameState) => _GameBoard(
+            room: widget.room,
             gameState: gameState,
             selectedGems: _selectedGems,
             onToggleGem: _toggleGem,
@@ -225,6 +226,7 @@ class _WaitingRoom extends StatelessWidget {
 }
 
 class _GameBoard extends StatelessWidget {
+  final GameRoom room;
   final GameState gameState;
   final Set<Gem> selectedGems;
   final ValueChanged<Gem> onToggleGem;
@@ -236,6 +238,7 @@ class _GameBoard extends StatelessWidget {
   final VoidCallback onSendChat;
 
   const _GameBoard({
+    required this.room,
     required this.gameState,
     required this.selectedGems,
     required this.onToggleGem,
@@ -246,6 +249,14 @@ class _GameBoard extends StatelessWidget {
     required this.onSendChat,
   });
 
+  /// 백엔드 GameState.PlayerState에는 닉네임이 없어서 방 참가자 목록에서 조회합니다.
+  String _nicknameFor(int userId) {
+    for (final p in room.players) {
+      if (p.id == userId) return p.nickname;
+    }
+    return 'User $userId';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -253,12 +264,12 @@ class _GameBoard extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.all(8),
           child: Text(
-            '턴 ${gameState.turnNumber} · 현재 차례: ${gameState.currentPlayerId ?? '-'}',
+            '턴 ${gameState.turnNumber} · 현재 차례: ${gameState.currentPlayerId != null ? _nicknameFor(gameState.currentPlayerId!) : '-'}',
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
         _TokenPool(
-          tokens: gameState.tokens,
+          tokens: gameState.tokenBank,
           selectedGems: selectedGems,
           onToggleGem: onToggleGem,
           onConfirm: onConfirmTakeTokens,
@@ -266,7 +277,7 @@ class _GameBoard extends StatelessWidget {
         Expanded(
           child: ListView(
             children: [
-              for (final tier in gameState.board.reversed)
+              for (final tier in gameState.boardTiers.reversed)
                 _BoardTierRow(
                   tier: tier,
                   onPurchase: (card) => onPurchase(card, reserved: false),
@@ -280,7 +291,7 @@ class _GameBoard extends StatelessWidget {
               Wrap(
                 spacing: 8,
                 children: [
-                  for (final noble in gameState.nobles)
+                  for (final noble in gameState.boardNobles)
                     Chip(label: Text('${noble.id} (+${noble.points})')),
                 ],
               ),
@@ -289,11 +300,12 @@ class _GameBoard extends StatelessWidget {
                 padding: const EdgeInsets.all(8),
                 child: Text('플레이어', style: Theme.of(context).textTheme.titleSmall),
               ),
-              for (final player in gameState.players)
+              for (final player in gameState.playersInOrder)
                 ListTile(
-                  title: Text('${player.nickname} · ${player.score}점'),
+                  title: Text(
+                      '${_nicknameFor(player.userId)} · ${player.points}점'),
                   subtitle: Text(
-                    '토큰: ${player.gems.entries.map((e) => '${e.key}:${e.value}').join(', ')}',
+                    '토큰: ${player.tokens.entries.map((e) => '${e.key}:${e.value}').join(', ')}',
                   ),
                 ),
             ],

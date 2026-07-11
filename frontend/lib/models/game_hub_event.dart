@@ -14,7 +14,7 @@ part 'game_hub_event.freezed.dart';
 @freezed
 class FinalScore with _$FinalScore {
   const factory FinalScore({
-    required String userId,
+    required int userId,
     required int score,
   }) = _FinalScore;
 }
@@ -35,49 +35,49 @@ class GameHubEvent with _$GameHubEvent {
   }) = GameHubActionResult;
 
   const factory GameHubEvent.turnChanged({
-    required String currentPlayerId,
+    required int currentPlayerId,
     required int turnNumber,
   }) = GameHubTurnChanged;
 
   const factory GameHubEvent.nobleAwarded({
-    required String playerId,
+    required int playerId,
     required String nobleId,
   }) = GameHubNobleAwarded;
 
   const factory GameHubEvent.nobleChoiceRequired({
-    required String playerId,
+    required int playerId,
     required List<String> candidateNobleIds,
   }) = GameHubNobleChoiceRequired;
 
   const factory GameHubEvent.playerJoined({
-    required String userId,
+    required int userId,
     required String nickname,
   }) = GameHubPlayerJoined;
 
   const factory GameHubEvent.playerLeft({
-    required String userId,
+    required int userId,
     required String nickname,
   }) = GameHubPlayerLeft;
 
   const factory GameHubEvent.finalRoundTriggered({
-    required String triggeredBy,
-    required String lastTurnPlayerId,
+    required int triggeredBy,
+    int? lastTurnPlayerId,
   }) = GameHubFinalRoundTriggered;
 
   const factory GameHubEvent.gameOver({
-    required String winnerId,
+    required int winnerId,
     required List<FinalScore> finalScores,
     String? tieBreakReason,
   }) = GameHubGameOver;
 
   const factory GameHubEvent.chatMessage({
-    required String playerId,
+    required int playerId,
     required String text,
     required DateTime ts,
   }) = GameHubChatMessage;
 
   const factory GameHubEvent.emoteReceived({
-    required String playerId,
+    required int playerId,
     required String emoteId,
     required DateTime ts,
   }) = GameHubEmoteReceived;
@@ -117,42 +117,42 @@ GameHubEvent parseGameHubEvent(String method, List<Object?>? args) {
       );
     case 'TurnChanged':
       return GameHubEvent.turnChanged(
-        currentPlayerId: json['currentPlayerId'] as String,
+        currentPlayerId: (json['currentPlayerId'] as num).toInt(),
         turnNumber: json['turnNumber'] as int,
       );
     case 'NobleAwarded':
       return GameHubEvent.nobleAwarded(
-        playerId: json['playerId'] as String,
+        playerId: (json['playerId'] as num).toInt(),
         nobleId: json['nobleId'] as String,
       );
     case 'NobleChoiceRequired':
       return GameHubEvent.nobleChoiceRequired(
-        playerId: json['playerId'] as String,
+        playerId: (json['playerId'] as num).toInt(),
         candidateNobleIds: (json['candidateNobleIds'] as List)
             .map((e) => e as String)
             .toList(),
       );
     case 'PlayerJoined':
       return GameHubEvent.playerJoined(
-        userId: json['userId'] as String,
+        userId: (json['userId'] as num).toInt(),
         nickname: json['nickname'] as String,
       );
     case 'PlayerLeft':
       return GameHubEvent.playerLeft(
-        userId: json['userId'] as String,
+        userId: (json['userId'] as num).toInt(),
         nickname: json['nickname'] as String,
       );
     case 'FinalRoundTriggered':
       return GameHubEvent.finalRoundTriggered(
-        triggeredBy: json['triggeredBy'] as String,
-        lastTurnPlayerId: json['lastTurnPlayerId'] as String,
+        triggeredBy: (json['triggeredBy'] as num).toInt(),
+        lastTurnPlayerId: (json['lastTurnPlayerId'] as num?)?.toInt(),
       );
     case 'GameOver':
       return GameHubEvent.gameOver(
-        winnerId: json['winnerId'] as String,
+        winnerId: (json['winnerId'] as num).toInt(),
         finalScores: (json['finalScores'] as List)
             .map((e) => FinalScore(
-                  userId: (e as Map)['userId'] as String,
+                  userId: ((e as Map)['userId'] as num).toInt(),
                   score: e['score'] as int,
                 ))
             .toList(),
@@ -160,13 +160,13 @@ GameHubEvent parseGameHubEvent(String method, List<Object?>? args) {
       );
     case 'ChatMessage':
       return GameHubEvent.chatMessage(
-        playerId: json['playerId'] as String,
+        playerId: (json['playerId'] as num).toInt(),
         text: json['text'] as String,
         ts: DateTime.parse(json['ts'] as String),
       );
     case 'EmoteReceived':
       return GameHubEvent.emoteReceived(
-        playerId: json['playerId'] as String,
+        playerId: (json['playerId'] as num).toInt(),
         emoteId: json['emoteId'] as String,
         ts: DateTime.parse(json['ts'] as String),
       );

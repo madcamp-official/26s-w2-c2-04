@@ -17,8 +17,8 @@ abstract class GameSocket {
   Stream<GameHubEvent> get events;
   HubConnectionState? get connectionState;
 
-  Future<void> connect({required String roomId, required String accessToken});
-  Future<void> leaveRoom(String roomId);
+  Future<void> connect({required int roomId, required String accessToken});
+  Future<void> leaveRoom(int roomId);
   Future<void> takeTokens(List<String> gems);
   Future<void> purchaseCard({required String cardId, required String source});
   Future<void> reserveCard({String? cardId, int? tier});
@@ -34,6 +34,10 @@ class SocketService implements GameSocket {
   HubConnection? _hubConnection;
   final _eventController = StreamController<GameHubEvent>.broadcast();
 
+  // GameHub의 모든 Hub 메서드(TakeTokens 등)는 roomId를 첫 인자로 받으므로,
+  // connect() 시점에 저장해두고 이후 모든 invoke에 실어 보냅니다.
+  int? _roomId;
+
   @override
   Stream<GameHubEvent> get events => _eventController.stream;
 
@@ -42,9 +46,10 @@ class SocketService implements GameSocket {
 
   @override
   Future<void> connect({
-    required String roomId,
+    required int roomId,
     required String accessToken,
   }) async {
+    _roomId = roomId;
     final connection = HubConnectionBuilder()
         .withUrl(
           '${ApiConfig.baseUrl}/hubs/game',
@@ -89,19 +94,18 @@ class SocketService implements GameSocket {
   }
 
   @override
-  Future<void> leaveRoom(String roomId) async {
+  Future<void> leaveRoom(int roomId) async {
     await _hubConnection?.invoke('LeaveRoom', args: [roomId]);
   }
 
-  Future<void> startGame(String roomId) async {
+  Future<void> startGame(int roomId) async {
     await _hubConnection?.invoke('StartGame', args: [roomId]);
   }
 
   @override
   Future<void> takeTokens(List<String> gems) async {
-    await _hubConnection?.invoke('TakeTokens', args: [
-      {'gems': gems},
-    ]);
+    // 백엔드 GameHub.TakeTokens(int roomId, List<string> gems) 시그니처와 위치 인자를 맞춘다.
+    await _hubConnection?.invoke('TakeTokens', args: [_roomId!, gems]);
   }
 
   @override
@@ -109,9 +113,9 @@ class SocketService implements GameSocket {
     required String cardId,
     required String source,
   }) async {
-    await _hubConnection?.invoke('PurchaseCard', args: [
-      {'cardId': cardId, 'source': source},
-    ]);
+    // 백엔드 GameHub.PurchaseCard(int roomId, string cardId, string source)
+    await _hubConnection
+        ?.invoke('PurchaseCard', args: [_roomId!, cardId, source]);
   }
 
   @override
@@ -120,40 +124,43 @@ class SocketService implements GameSocket {
       (cardId == null) != (tier == null),
       'cardId와 tier 중 하나만 지정해야 합니다.',
     );
+    // 백엔드 GameHub.ReserveCard(int roomId, ReserveCardRequest request)
+    // (cardId/tier 중 하나가 null이라 List<Object> 위치 인자로 못 보내고 객체로 감싼다)
     await _hubConnection?.invoke('ReserveCard', args: [
-      if (cardId != null) {'cardId': cardId} else {'tier': tier},
+      _roomId!,
+      {'cardId': cardId, 'tier': tier},
     ]);
   }
 
   @override
   Future<void> discardTokens(List<String> gems) async {
-    await _hubConnection?.invoke('DiscardTokens', args: [
-      {'gems': gems},
-    ]);
+    // 백엔드 GameHub.DiscardTokens(int roomId, List<string> gems)
+    await _hubConnection?.invoke('DiscardTokens', args: [_roomId!, gems]);
   }
 
   @override
   Future<void> claimNoble(String nobleId) async {
-    await _hubConnection?.invoke('ClaimNoble', args: [nobleId]);
+    // 백엔드 GameHub.ClaimNoble(int roomId, string nobleId)
+    await _hubConnection?.invoke('ClaimNoble', args: [_roomId!, nobleId]);
   }
 
   @override
   Future<void> sendChatMessage(String text) async {
-    await _hubConnection?.invoke('SendChatMessage', args: [
-      {'text': text},
-    ]);
+    // 백엔드 GameHub.SendChatMessage(int roomId, string text)
+    await _hubConnection?.invoke('SendChatMessage', args: [_roomId!, text]);
   }
 
   @override
   Future<void> sendEmote(String emoteId) async {
-    await _hubConnection?.invoke('SendEmote', args: [
-      {'emoteId': emoteId},
-    ]);
+    // 백엔드 GameHub.SendEmote(int roomId, string emoteId)
+    await _hubConnection?.invoke('SendEmote', args: [_roomId!, emoteId]);
   }
 
   @override
   Future<void> requestResync(int lastSequence) async {
-    await _hubConnection?.invoke('RequestResync', args: [lastSequence]);
+    // 백엔드 GameHub.RequestResync(int roomId, int lastSequence)
+    await _hubConnection
+        ?.invoke('RequestResync', args: [_roomId!, lastSequence]);
   }
 
   @override

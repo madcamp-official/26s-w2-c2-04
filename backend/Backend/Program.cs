@@ -80,6 +80,18 @@ builder.Services
     });
 builder.Services.AddAuthorization();
 
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("DevFlutterWeb", policy =>
+            policy.SetIsOriginAllowed(_ => true)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials());
+    });
+}
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
@@ -114,6 +126,11 @@ if (app.Environment.IsDevelopment())
         FileProvider = testFrontendProvider,
         RequestPath = "/test",
     });
+}
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("DevFlutterWeb");
 }
 
 app.UseAuthentication();

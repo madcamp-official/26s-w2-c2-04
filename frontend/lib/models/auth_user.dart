@@ -7,7 +7,7 @@ part 'auth_user.g.dart';
 @freezed
 class AuthUser with _$AuthUser {
   const factory AuthUser({
-    required String userId,
+    required int userId,
     required String nickname,
     required String provider, // "email" | "kakao" | "naver" | "google"
     required String accessToken,

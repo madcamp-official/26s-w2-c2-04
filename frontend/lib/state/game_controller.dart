@@ -75,14 +75,14 @@ class GameController extends StateNotifier<GameControllerState> {
   final GameSocket _socket;
   final PlayService _playService;
   StreamSubscription<GameHubEvent>? _sub;
-  String? _roomId;
+  int? _roomId;
   int _lastSequence = 0;
 
   GameController(this._socket, this._playService)
       : super(const GameDisconnected());
 
   Future<void> connect({
-    required String roomId,
+    required int roomId,
     required String accessToken,
   }) async {
     state = const GameConnecting();
@@ -104,7 +104,7 @@ class GameController extends StateNotifier<GameControllerState> {
   }
 
   /// 관전/재접속 폴백: GameHub 연결 전에 REST 스냅샷으로 먼저 화면을 채웁니다.
-  Future<void> loadSnapshot(String gameId) async {
+  Future<void> loadSnapshot(int gameId) async {
     final snapshot = await _playService.getGameState(gameId);
     _lastSequence = snapshot.sequence;
     state = GameConnected(gameState: snapshot);
