@@ -136,7 +136,7 @@
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
-| POST | `/rooms` | 방 생성 | `{"maxPlayers": 4, "isPrivate": false, "password": null}` (`maxPlayers`는 2~4, 기본 4, 나머지 선택) | `{"roomId": "r_5566", "hostId": "u_1024", "status": "WAITING", "maxPlayers": 4, "players": [{"userId": "u_1024", "nickname": "스플랜더왕"}], "createdAt": "2026-07-10T09:10:00Z"}` | 인증 필요, 생성자가 방장, 랭킹전 없이 캐주얼 모드로 고정 |
+| POST | `/rooms` | 방 생성 | `{"maxPlayers": 4, "isPrivate": false, "password": null}` (`maxPlayers`는 2~4, 기본 4, 나머지 선택) | `{"roomId": "r_5566", "hostId": "u_1024", "status": "WAITING", "maxPlayers": 4, "players": [{"userId": "u_1024", "nickname": "스플랜더왕"}], "createdAt": "2026-07-10T09:10:00Z"}` | 인증 필요, 생성자가 방장. 이 API로 만든 방은 항상 캐주얼 모드이며 클라이언트가 ruleset을 지정할 수 없음. 랭킹전은 별도의 랜덤 매칭 API를 통해 진행 |
 | GET | `/rooms` | 방 목록 조회 | Query: `page=1&limit=20` (`limit` 기본 20, 모두 선택) | `{"rooms": [{"roomId": "r_5566", "hostId": "u_1024", "maxPlayers": 4, "players": [{"userId": "u_1024", "nickname": "스플랜더왕"}], "createdAt": "2026-07-10T09:10:00Z"}], "total": 1, "page": 1}` | 인증 필요, 친구 여부와 무관하게 매칭 가능. 대기 중(WAITING)인 방만 반환하므로 목록 항목에는 `status`가 없음 |
 | GET | `/rooms/{roomId}` | 방 상세 조회 | 없음 | Room 객체(생성 응답과 동일 구조, 예: `{"roomId": "r_5566", "hostId": "u_1024", "status": "WAITING", "maxPlayers": 4, "players": [...], "createdAt": "2026-07-10T09:10:00Z"}`) | 인증 필요 |
 | POST | `/rooms/{roomId}/join` | 방 참가(좌석 예약) | `{"password": "1234"}` (비공개 방일 때만, 그 외엔 `{}`) | 갱신된 Room 객체(생성 응답과 동일 구조) | 인증 필요, 정원/비밀번호 검증(409/403) |
