@@ -190,6 +190,47 @@
 </section>
 
 <section>
+  <h2>랭킹전 매칭</h2>
+  <div class="row">
+    <label>인원수
+      <select id="matchmakingPlayerCount">
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4" selected>4</option>
+      </select>
+    </label>
+  </div>
+  <button id="btnMatchmakingRanked">랭킹전 매칭 시작</button>
+  <div style="font-size:12px;color:#666;margin-top:6px">
+    대기 중인 같은 인원수 랭킹전 방이 있으면 자동 참가, 없으면 자동 생성합니다. 정원이 차면 자동으로 게임이 시작되고 GameHub에 자동 연결됩니다.
+  </div>
+</section>
+
+<section>
+  <h2>리더보드</h2>
+  <div class="row">
+    <label>인원수
+      <select id="leaderboardPlayerCount">
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4" selected>4</option>
+      </select>
+    </label>
+    <label>페이지 <input id="leaderboardPage" type="number" value="1" min="1"></label>
+    <label>검색(닉네임/유저ID) <input id="leaderboardQuery" type="text" placeholder="비워두면 전체 목록"></label>
+  </div>
+  <button id="btnLeaderboardLoad">조회</button>
+  <button id="btnLeaderboardSearch" class="secondary">검색</button>
+  <table id="leaderboardTable">
+    <thead>
+      <tr><th>순위</th><th>닉네임</th><th>MMR</th><th>평균 등수</th><th>시즌 게임 수</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <div id="myRankInfo" style="font-size:12px;color:#666;margin-top:8px"></div>
+</section>
+
+<section>
   <h2>응답 로그</h2>
   <pre id="log">여기에 마지막 API 응답이 표시됩니다.</pre>
 </section>
@@ -665,6 +706,63 @@ function playerCard(p, currentPlayerId) {
     ${(p.reservedCards || []).length ? `<br>reservedCardIds: ${p.reservedCards.map((c) => c.id).join(', ')}` : ''}
   </div>`;
 }
+
+// ── 랭킹전 매칭 / 리더보드 ──────────────────────────────────────────
+document.getElementById('btnMatchmakingRanked').addEventListener('click', async () => {
+  const playerCount = document.getElementById('matchmakingPlayerCount').value;
+  const result = await api(`/matchmaking/${playerCount}/ranked`, 'POST');
+  log(`POST /matchmaking/${playerCount}/ranked`, result);
+  refreshRooms();
+
+  if (result.status === 200) {
+    const id = result.body.roomId;
+    document.getElementById('selectedRoomId').value = id;
+    document.getElementById('gameRoomId').value = id;
+    try {
+      await connectHub();
+      await invokeHub('JoinRoom', id);
+    } catch (err) {
+      logGameEvent('auto-join(랭킹전 매칭) 실패', { message: String(err) });
+    }
+  }
+});
+
+function renderLeaderboard(entries, myRank) {
+  const tbody = document.querySelector('#leaderboardTable tbody');
+  tbody.innerHTML = '';
+  for (const e of entries) {
+    const tr = document.createElement('tr');
+    if (myRank && e.userId === myRank.userId) tr.classList.add('selected');
+    tr.innerHTML = `
+      <td>${e.rank}</td>
+      <td>${e.nickname}</td>
+      <td>${e.mmr}</td>
+      <td>${e.avgPlace}</td>
+      <td>${e.gamesPlayedSeason}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  const myRankInfo = document.getElementById('myRankInfo');
+  myRankInfo.textContent = myRank
+    ? `내 순위: ${myRank.rank}위 (${myRank.nickname}, mmr=${myRank.mmr}, avgPlace=${myRank.avgPlace}, games=${myRank.gamesPlayedSeason})`
+    : '내 순위: 아직 해당 인원수 랭킹전 기록 없음';
+}
+
+document.getElementById('btnLeaderboardLoad').addEventListener('click', async () => {
+  const playerCount = document.getElementById('leaderboardPlayerCount').value;
+  const page = document.getElementById('leaderboardPage').value || 1;
+  const result = await api(`/leaderboard/${playerCount}?page=${page}`);
+  log(`GET /leaderboard/${playerCount}?page=${page}`, result);
+  if (result.status === 200) renderLeaderboard(result.body.entries, result.body.myRank);
+});
+
+document.getElementById('btnLeaderboardSearch').addEventListener('click', async () => {
+  const playerCount = document.getElementById('leaderboardPlayerCount').value;
+  const query = encodeURIComponent(document.getElementById('leaderboardQuery').value || '');
+  const result = await api(`/leaderboard/${playerCount}/search?query=${query}`);
+  log(`GET /leaderboard/${playerCount}/search?query=${query}`, result);
+  if (result.status === 200) renderLeaderboard(result.body.entries, null);
+});
 </script>
 </body>
 </html>

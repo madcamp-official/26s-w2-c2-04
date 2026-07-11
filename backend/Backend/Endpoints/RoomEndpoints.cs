@@ -60,7 +60,7 @@ public static class RoomEndpoints
 
             var query = db.Rooms
                 .Include(r => r.Players).ThenInclude(p => p.User)
-                .Where(r => r.Status == RoomStatus.Waiting);
+                .Where(r => r.Status == RoomStatus.Waiting && r.Ruleset == RoomRuleset.Casual);
 
             var total = await query.CountAsync();
             var rooms = await query
@@ -98,6 +98,11 @@ public static class RoomEndpoints
 
             if (room.Players.Any(p => p.UserId == userId))
                 return Results.Ok(MapRoom(room));
+
+            if (room.Ruleset == RoomRuleset.Official)
+                return Results.Json(
+                    new { code = "ROOM_RANKED_ONLY_VIA_MATCHMAKING", message = "랭킹전 방은 매칭 API를 통해서만 참가할 수 있습니다." },
+                    statusCode: StatusCodes.Status403Forbidden);
 
             if (await IsInActiveRoomAsync(db, userId))
                 return Results.Conflict(new { code = "ALREADY_IN_ROOM", message = "이미 참가 중인 다른 방이 있습니다." });
@@ -165,27 +170,8 @@ public static class RoomEndpoints
             if (room.Players.Count < 2)
                 return Results.Conflict(new { code = "NOT_ENOUGH_PLAYERS", message = "최소 2명이 필요합니다." });
 
-            var playerIds = room.Players.OrderBy(p => p.JoinedAt).Select(p => p.UserId).ToList();
-            var state = GameEngine.Initialize(playerIds);
-
-            var game = new Game
-            {
-                RoomId = room.Id,
-                CurrentPlayerId = state.CurrentPlayerId,
-                TurnNumber = state.TurnNumber,
-                Sequence = state.Sequence,
-                StateJson = JsonSerializer.Serialize(state),
-            };
-            room.Status = RoomStatus.Playing;
-
-            db.Games.Add(game);
-            await db.SaveChangesAsync();
-            await stateStore.SaveAsync(room.Id, state);
-
-            await hubContext.Clients.Group(GameHubMessages.GroupName(room.Id))
-                .SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
-
-            return Results.Ok(new StartGameResponse(game.Id, "PLAYING"));
+            var response = await StartRoomAsync(db, stateStore, hubContext, room);
+            return Results.Ok(response);
         })
             .WithName("StartGame");
 
@@ -212,7 +198,7 @@ public static class RoomEndpoints
             .WithName("DeleteRoom");
     }
 
-    private static async Task<bool> IsInActiveRoomAsync(AppDbContext db, int userId) =>
+    internal static async Task<bool> IsInActiveRoomAsync(AppDbContext db, int userId) =>
         await db.RoomPlayers
             .Include(rp => rp.Room)
             .AnyAsync(rp => rp.UserId == userId && rp.Room.Status == RoomStatus.Waiting);
@@ -246,7 +232,42 @@ public static class RoomEndpoints
         }
     }
 
-    private static async Task<RoomResponse> LoadRoomResponseAsync(AppDbContext db, int roomId)
+    /// <summary>
+    /// MatchmakingEndpoints에서 재사용. 검증(정원/비공개/중복참가 등)은 호출부 책임.
+    /// </summary>
+    internal static void AddPlayerToRoom(Room room, int userId) =>
+        room.Players.Add(new RoomPlayer { RoomId = room.Id, UserId = userId });
+
+    /// <summary>
+    /// MatchmakingEndpoints에서도 재사용. 방장/정원 검증은 호출부 책임.
+    /// </summary>
+    internal static async Task<StartGameResponse> StartRoomAsync(
+        AppDbContext db, GameStateStore stateStore, IHubContext<GameHub> hubContext, Room room)
+    {
+        var playerIds = room.Players.OrderBy(p => p.JoinedAt).Select(p => p.UserId).ToList();
+        var state = GameEngine.Initialize(playerIds);
+
+        var game = new Game
+        {
+            RoomId = room.Id,
+            CurrentPlayerId = state.CurrentPlayerId,
+            TurnNumber = state.TurnNumber,
+            Sequence = state.Sequence,
+            StateJson = JsonSerializer.Serialize(state),
+        };
+        room.Status = RoomStatus.Playing;
+
+        db.Games.Add(game);
+        await db.SaveChangesAsync();
+        await stateStore.SaveAsync(room.Id, state);
+
+        await hubContext.Clients.Group(GameHubMessages.GroupName(room.Id))
+            .SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
+
+        return new StartGameResponse(game.Id, "PLAYING");
+    }
+
+    internal static async Task<RoomResponse> LoadRoomResponseAsync(AppDbContext db, int roomId)
     {
         var room = await db.Rooms
             .Include(r => r.Players).ThenInclude(p => p.User)

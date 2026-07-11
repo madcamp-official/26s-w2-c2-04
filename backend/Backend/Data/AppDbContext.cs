@@ -12,6 +12,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<RoomPlayer> RoomPlayers => Set<RoomPlayer>();
     public DbSet<Game> Games => Set<Game>();
     public DbSet<GameAction> GameActions => Set<GameAction>();
+    public DbSet<PlayerRanking> PlayerRankings => Set<PlayerRanking>();
+    public DbSet<GamePlayerResult> GamePlayerResults => Set<GamePlayerResult>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -75,6 +77,35 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<GameAction>()
             .HasIndex(a => new { a.GameId, a.Sequence })
+            .IsUnique();
+
+        modelBuilder.Entity<PlayerRanking>()
+            .HasOne(pr => pr.User)
+            .WithMany()
+            .HasForeignKey(pr => pr.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PlayerRanking>()
+            .HasIndex(pr => new { pr.UserId, pr.PlayerCount })
+            .IsUnique();
+
+        modelBuilder.Entity<PlayerRanking>()
+            .HasIndex(pr => new { pr.PlayerCount, pr.Mmr });
+
+        modelBuilder.Entity<GamePlayerResult>()
+            .HasOne(r => r.Game)
+            .WithMany()
+            .HasForeignKey(r => r.GameId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GamePlayerResult>()
+            .HasOne(r => r.User)
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GamePlayerResult>()
+            .HasIndex(r => new { r.GameId, r.UserId })
             .IsUnique();
     }
 }
