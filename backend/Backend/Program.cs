@@ -121,6 +121,8 @@ app.UseAuthorization();
 
 app.MapAuthEndpoints();
 app.MapRoomEndpoints();
+app.MapMatchmakingEndpoints();
+app.MapLeaderboardEndpoints();
 app.MapHub<GameHub>("/hubs/game");
 
 app.Run();

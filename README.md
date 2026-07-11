@@ -144,6 +144,12 @@
 | POST | `/rooms/{roomId}/start` | 게임 시작 | 없음 | `{"gameId": "g_9911", "phase": "PLAYING"}` | 방장만 가능(403), 이후 SignalR로 진행 |
 | DELETE | `/rooms/{roomId}` | 방 삭제 | 없음 | 204 No Content | 방장만, 시작 전에만 가능(409) |
 
+### 4-1. 매칭(Matchmaking) API — 랭킹전 진입
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| POST | `/matchmaking/{playerCount}/ranked` | 랭킹전 자동 매칭 | 없음 (`playerCount`는 `2`\|`3`\|`4`) | Room 객체(4번 방 API의 생성 응답과 동일 구조) | 인증 필요. 대기 중인 해당 인원수 랭킹전 방이 있으면 자동 참가, 없으면 자동 생성 후 참가. 정원이 차면 자동으로 게임이 시작됨(SignalR `StateSync` 브로드캐스트). 스킬 기반 매칭은 하지 않고 선착순. 이렇게 만들어진 방은 `GET /rooms` 목록과 `POST /rooms/{roomId}/join`으로는 접근 불가(`ROOM_RANKED_ONLY_VIA_MATCHMAKING`) — 반드시 이 API로만 참가 |
+
 ---
 ## 5. 게임 조회 API (REST, 읽기 전용)
 

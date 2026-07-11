@@ -144,6 +144,7 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
             var room = await db.Rooms.FirstAsync(r => r.Id == roomId);
             room.Status = RoomStatus.Waiting;
 
+            await RecordResultsAsync(db, game.Id, room, state, outcome.FinalScores!);
             await stateStore.RemoveAsync(roomId);
 
             await group.SendAsync("GameOver", new
@@ -158,6 +159,59 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
         }
 
         await db.SaveChangesAsync();
+    }
+
+    private static async Task RecordResultsAsync(
+        AppDbContext db, int gameId, Room room, GameState state, IReadOnlyList<PlayerScore> finalScores)
+    {
+        var playerCount = state.PlayerOrder.Count;
+        var isRanked = room.Ruleset == RoomRuleset.Official;
+
+        for (var i = 0; i < finalScores.Count; i++)
+        {
+            var result = finalScores[i];
+            db.GamePlayerResults.Add(new GamePlayerResult
+            {
+                GameId = gameId,
+                UserId = result.PlayerId,
+                PlayerCount = playerCount,
+                Place = i + 1,
+                Score = result.Score,
+                IsRanked = isRanked,
+            });
+        }
+
+        if (!isRanked)
+            return;
+
+        var userIds = finalScores.Select(s => s.PlayerId).ToList();
+        var rankings = await db.PlayerRankings
+            .Where(pr => pr.PlayerCount == playerCount && userIds.Contains(pr.UserId))
+            .ToDictionaryAsync(pr => pr.UserId);
+
+        foreach (var userId in userIds)
+        {
+            if (rankings.ContainsKey(userId))
+                continue;
+
+            var newRanking = new PlayerRanking { UserId = userId, PlayerCount = playerCount };
+            db.PlayerRankings.Add(newRanking);
+            rankings[userId] = newRanking;
+        }
+
+        var eloInput = finalScores
+            .Select((s, i) => (UserId: s.PlayerId, Place: i + 1, Mmr: rankings[s.PlayerId].Mmr))
+            .ToList();
+        var deltas = RankingCalculator.CalculateMmrDeltas(eloInput);
+
+        foreach (var (userId, place, _) in eloInput)
+        {
+            var ranking = rankings[userId];
+            ranking.Mmr += deltas[userId];
+            ranking.GamesPlayed++;
+            ranking.TotalPlaceSum += place;
+            ranking.UpdatedAt = DateTime.UtcNow;
+        }
     }
 
     private static Dictionary<GemType, int> ParseGems(IEnumerable<string> gems)

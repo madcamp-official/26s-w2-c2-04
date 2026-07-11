@@ -293,7 +293,7 @@ public static class GameEngine
             .ThenBy(p => state.PlayerOrder.IndexOf(p.UserId))
             .ToList();
 
-        var scores = state.Players.Values.Select(p => new PlayerScore(p.UserId, p.Points)).ToList();
+        var scores = ranked.Select(p => new PlayerScore(p.UserId, p.Points)).ToList();
         return (ranked[0].UserId, scores);
     }
 
