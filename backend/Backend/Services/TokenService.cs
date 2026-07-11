@@ -17,12 +17,13 @@ public class TokenService(IConfiguration configuration) : ITokenService
         var minutes = int.Parse(jwtSection["AccessTokenMinutes"]!);
         expiresAt = DateTime.UtcNow.AddMinutes(minutes);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
+        if (!string.IsNullOrEmpty(user.Email))
+            claims.Add(new Claim(JwtRegisteredClaimNames.Email, user.Email));
 
         var token = new JwtSecurityToken(
             issuer: jwtSection["Issuer"],

@@ -1,10 +1,10 @@
 namespace Backend.Dtos;
 
-public record CreateRoomRequest(int? MaxPlayers, bool? IsPrivate, string? Password, string? Ruleset);
+public record CreateRoomRequest(int? MaxPlayers, bool? IsPrivate, string? Password);
 
 public record JoinRoomRequest(string? Password);
 
-public record RoomPlayerResponse(int UserId, string Email, bool IsHost);
+public record RoomPlayerResponse(int UserId, string Nickname, bool IsHost);
 
 public record RoomResponse(
     int RoomId,
@@ -12,8 +12,17 @@ public record RoomResponse(
     string Status,
     int MaxPlayers,
     bool IsPrivate,
-    string Ruleset,
     List<RoomPlayerResponse> Players,
     DateTime CreatedAt);
 
-public record RoomListResponse(List<RoomResponse> Rooms, int Total, int Page);
+public record RoomListItemResponse(
+    int RoomId,
+    int HostId,
+    int MaxPlayers,
+    bool IsPrivate,
+    List<RoomPlayerResponse> Players,
+    DateTime CreatedAt);
+
+public record RoomListResponse(List<RoomListItemResponse> Rooms, int Total, int Page);
+
+public record StartGameResponse(int GameId, string Phase);

@@ -6,15 +6,28 @@ namespace Backend.Data;
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<User> Users => Set<User>();
+    public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<RoomPlayer> RoomPlayers => Set<RoomPlayer>();
+    public DbSet<Game> Games => Set<Game>();
+    public DbSet<GameAction> GameActions => Set<GameAction>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Email)
             .IsUnique();
+
+        modelBuilder.Entity<ExternalLogin>()
+            .HasIndex(el => new { el.Provider, el.ProviderUserId })
+            .IsUnique();
+
+        modelBuilder.Entity<ExternalLogin>()
+            .HasOne(el => el.User)
+            .WithMany(u => u.ExternalLogins)
+            .HasForeignKey(el => el.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<RefreshToken>()
             .HasIndex(rt => rt.TokenHash)
@@ -46,6 +59,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<RoomPlayer>()
             .HasIndex(rp => new { rp.RoomId, rp.UserId })
+            .IsUnique();
+
+        modelBuilder.Entity<Game>()
+            .HasOne(g => g.Room)
+            .WithOne(r => r.Game)
+            .HasForeignKey<Game>(g => g.RoomId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GameAction>()
+            .HasOne(a => a.Game)
+            .WithMany(g => g.Actions)
+            .HasForeignKey(a => a.GameId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GameAction>()
+            .HasIndex(a => new { a.GameId, a.Sequence })
             .IsUnique();
     }
 }
