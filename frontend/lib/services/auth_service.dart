@@ -62,6 +62,23 @@ class AuthService {
     // 204 No Content 응답 - 별도 파싱 없음
   }
 
+  /// Access Token 재발급. ApiClient가 401 응답을 받았을 때 호출합니다.
+  Future<({String accessToken, int expiresIn})> refresh(
+    String refreshToken,
+  ) async {
+    final res = await _client.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/refresh'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'refreshToken': refreshToken}),
+    );
+
+    if (res.statusCode != 200) {
+      throw AuthException(_parseError(res.body) ?? 'Access Token 재발급 실패');
+    }
+    final json = jsonDecode(res.body);
+    return (accessToken: json['accessToken'] as String, expiresIn: json['expiresIn'] as int);
+  }
+
   String? _parseError(String body) {
     try {
       final json = jsonDecode(body);
