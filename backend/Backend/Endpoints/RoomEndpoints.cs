@@ -3,9 +3,11 @@ using Backend.Data;
 using Backend.Dtos;
 using Backend.Extensions;
 using Backend.GameLogic;
+using Backend.Hubs;
 using Backend.Models;
 using Backend.Services;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Endpoints;
@@ -144,7 +146,7 @@ public static class RoomEndpoints
         })
             .WithName("LeaveRoom");
 
-        group.MapPost("/{roomId:int}/start", async (int roomId, HttpContext http, AppDbContext db, GameStateStore stateStore) =>
+        group.MapPost("/{roomId:int}/start", async (int roomId, HttpContext http, AppDbContext db, GameStateStore stateStore, IHubContext<GameHub> hubContext) =>
         {
             var userId = http.User.GetUserId();
 
@@ -179,6 +181,9 @@ public static class RoomEndpoints
             db.Games.Add(game);
             await db.SaveChangesAsync();
             await stateStore.SaveAsync(room.Id, state);
+
+            await hubContext.Clients.Group(GameHubMessages.GroupName(room.Id))
+                .SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
 
             return Results.Ok(new StartGameResponse(game.Id, "PLAYING"));
         })

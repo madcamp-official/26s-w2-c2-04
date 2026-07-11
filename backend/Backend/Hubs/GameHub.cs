@@ -16,20 +16,24 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
     public async Task JoinRoom(int roomId)
     {
         var userId = Context.User!.GetUserId();
-        var state = await stateStore.LoadAsync(roomId) ?? throw new HubException("GAME_NOT_FOUND");
-        if (!state.Players.ContainsKey(userId))
+        var isMember = await db.RoomPlayers.AnyAsync(p => p.RoomId == roomId && p.UserId == userId);
+        if (!isMember)
             throw new HubException("NOT_A_MEMBER");
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(roomId));
-        await Clients.Caller.SendAsync("StateSync", BuildFullSync(state));
-        await Clients.OthersInGroup(GroupName(roomId)).SendAsync("PlayerJoined", new { userId });
+        await Groups.AddToGroupAsync(Context.ConnectionId, GameHubMessages.GroupName(roomId));
+
+        var state = await stateStore.LoadAsync(roomId);
+        if (state is not null)
+            await Clients.Caller.SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
+
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerJoined", new { userId });
     }
 
     public async Task LeaveRoom(int roomId)
     {
         var userId = Context.User!.GetUserId();
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, GroupName(roomId));
-        await Clients.OthersInGroup(GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, GameHubMessages.GroupName(roomId));
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
     }
 
     public async Task StartGame(int roomId)
@@ -43,7 +47,7 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
         var state = await stateStore.LoadAsync(roomId)
             ?? throw new HubException("ROOM_NOT_STARTED");
 
-        await Clients.Group(GroupName(roomId)).SendAsync("StateSync", BuildFullSync(state));
+        await Clients.Group(GameHubMessages.GroupName(roomId)).SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
     }
 
     public async Task TakeTokens(int roomId, List<string> gems)
@@ -84,7 +88,7 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
     public async Task RequestResync(int roomId, int lastSequence)
     {
         var state = await stateStore.LoadAsync(roomId) ?? throw new HubException("GAME_NOT_FOUND");
-        await Clients.Caller.SendAsync("StateSync", BuildFullSync(state));
+        await Clients.Caller.SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
     }
 
     private async Task HandleActionAsync(
@@ -118,8 +122,8 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
             PayloadJson = JsonSerializer.Serialize(payload),
         });
 
-        var group = Clients.Group(GroupName(roomId));
-        await group.SendAsync("StateSync", BuildFullSync(state));
+        var group = Clients.Group(GameHubMessages.GroupName(roomId));
+        await group.SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
 
         foreach (var nobleId in outcome.AutoAwardedNobleIds)
             await group.SendAsync("NobleAwarded", new { playerId = userId, nobleId });
@@ -167,13 +171,4 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
         }
         return result;
     }
-
-    private static object BuildFullSync(GameState state) => new
-    {
-        type = "full",
-        state,
-        sequence = state.Sequence,
-    };
-
-    private static string GroupName(int roomId) => $"room-{roomId}";
 }

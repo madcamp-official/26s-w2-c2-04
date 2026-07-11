@@ -353,8 +353,19 @@ document.getElementById('createRoomForm').addEventListener('submit', async (e) =
     password: isPrivate ? f.get('password') : undefined,
   });
   log('POST /rooms', result);
-  if (result.status === 201) document.getElementById('selectedRoomId').value = result.body.roomId;
   refreshRooms();
+
+  if (result.status === 201) {
+    const id = result.body.roomId;
+    document.getElementById('selectedRoomId').value = id;
+    document.getElementById('gameRoomId').value = id;
+    try {
+      await connectHub();
+      await invokeHub('JoinRoom', id);
+    } catch (err) {
+      logGameEvent('auto-join(방 생성) 실패', { message: String(err) });
+    }
+  }
 });
 
 async function refreshRooms() {
@@ -401,6 +412,16 @@ document.getElementById('btnJoinRoom').addEventListener('click', async () => {
   const result = await api(`/rooms/${id}/join`, 'POST', { password });
   log(`POST /rooms/${id}/join`, result);
   refreshRooms();
+
+  if (result.status === 200) {
+    document.getElementById('gameRoomId').value = id;
+    try {
+      await connectHub();
+      await invokeHub('JoinRoom', id);
+    } catch (err) {
+      logGameEvent('auto-join(방 참가) 실패', { message: String(err) });
+    }
+  }
 });
 
 document.getElementById('btnLeaveRoom').addEventListener('click', async () => {
@@ -417,6 +438,18 @@ document.getElementById('btnStartRoom').addEventListener('click', async () => {
   const result = await api(`/rooms/${id}/start`, 'POST');
   log(`POST /rooms/${id}/start`, result);
   refreshRooms();
+
+  if (result.status === 200) {
+    document.getElementById('gameRoomId').value = id;
+    // 참고: REST /start가 서버에서 직접 Hub 그룹에 StateSync를 브로드캐스트하므로
+    // 여기서는 이 클라이언트가 아직 그룹에 안 들어가 있을 경우를 대비한 안전장치로만 호출한다.
+    try {
+      await connectHub();
+      await invokeHub('JoinRoom', id);
+    } catch (err) {
+      logGameEvent('auto-join(게임 시작) 실패', { message: String(err) });
+    }
+  }
 });
 
 document.getElementById('btnDeleteRoom').addEventListener('click', async () => {
@@ -451,32 +484,37 @@ function setHubStatus(connected) {
   el.classList.toggle('connected', connected);
 }
 
-document.getElementById('btnHubConnect').addEventListener('click', async () => {
-  if (hubConnection) return alert('이미 연결되어 있습니다.');
-  if (!state.accessToken) return alert('먼저 로그인하세요.');
+async function connectHub() {
+  if (hubConnection) return hubConnection;
+  if (!state.accessToken) throw new Error('먼저 로그인하세요.');
 
-  hubConnection = new signalR.HubConnectionBuilder()
+  const connection = new signalR.HubConnectionBuilder()
     .withUrl(`/hubs/game?access_token=${state.accessToken}`)
     .withAutomaticReconnect()
     .build();
 
-  hubConnection.on('StateSync', (msg) => { logGameEvent('StateSync', msg); renderGameState(msg.state); });
-  hubConnection.on('TurnChanged', (msg) => logGameEvent('TurnChanged', msg));
-  hubConnection.on('PlayerJoined', (msg) => logGameEvent('PlayerJoined', msg));
-  hubConnection.on('PlayerLeft', (msg) => logGameEvent('PlayerLeft', msg));
-  hubConnection.on('NobleAwarded', (msg) => logGameEvent('NobleAwarded', msg));
-  hubConnection.on('NobleChoiceRequired', (msg) => logGameEvent('NobleChoiceRequired', msg));
-  hubConnection.on('FinalRoundTriggered', (msg) => logGameEvent('FinalRoundTriggered', msg));
-  hubConnection.on('GameOver', (msg) => logGameEvent('GameOver', msg));
-  hubConnection.onclose(() => setHubStatus(false));
+  connection.on('StateSync', (msg) => { logGameEvent('StateSync', msg); renderGameState(msg.state); });
+  connection.on('TurnChanged', (msg) => logGameEvent('TurnChanged', msg));
+  connection.on('PlayerJoined', (msg) => logGameEvent('PlayerJoined', msg));
+  connection.on('PlayerLeft', (msg) => logGameEvent('PlayerLeft', msg));
+  connection.on('NobleAwarded', (msg) => logGameEvent('NobleAwarded', msg));
+  connection.on('NobleChoiceRequired', (msg) => logGameEvent('NobleChoiceRequired', msg));
+  connection.on('FinalRoundTriggered', (msg) => logGameEvent('FinalRoundTriggered', msg));
+  connection.on('GameOver', (msg) => logGameEvent('GameOver', msg));
+  connection.onclose(() => { hubConnection = null; setHubStatus(false); });
 
+  await connection.start();
+  hubConnection = connection;
+  setHubStatus(true);
+  logGameEvent('connected', { userId: state.userId });
+  return hubConnection;
+}
+
+document.getElementById('btnHubConnect').addEventListener('click', async () => {
   try {
-    await hubConnection.start();
-    setHubStatus(true);
-    logGameEvent('connected', { userId: state.userId });
+    await connectHub();
   } catch (err) {
     logGameEvent('connect error', { message: String(err) });
-    hubConnection = null;
   }
 });
 
