@@ -1,0 +1,184 @@
+// GameHub(SignalR, /hubs/game)의 IGameClient 콜백(Server -> Client)을 표현하는
+// 모델. socket_service.dart가 hubConnection.on(...)으로 받은 원시 인자를
+// GameHubEvent.fromCallback으로 정규화해서 하나의 스트림으로 흘려보내면,
+// game_controller.dart가 이를 구독해 상태를 갱신합니다.
+// (game_event.dart는 방 목록/입장/준비 등 로비 단계의 초기 설계용 모델이라
+// 실제 GameHub 프로토콜과는 별개로 남겨둡니다.)
+
+// ignore_for_file: invalid_annotation_target
+import 'package:freezed_annotation/freezed_annotation.dart';
+import 'game_state.dart';
+
+part 'game_hub_event.freezed.dart';
+
+@freezed
+class FinalScore with _$FinalScore {
+  const factory FinalScore({
+    required String userId,
+    required int score,
+  }) = _FinalScore;
+}
+
+@freezed
+class GameHubEvent with _$GameHubEvent {
+  /// StateSync: full이면 state에 GameState 전체, delta면 patch(JSON Patch)만 옴
+  const factory GameHubEvent.stateSync({
+    GameState? state,
+    List<Map<String, dynamic>>? patch,
+    required int sequence,
+  }) = GameHubStateSync;
+
+  const factory GameHubEvent.actionResult({
+    required bool success,
+    String? error,
+    List<Map<String, dynamic>>? patch,
+  }) = GameHubActionResult;
+
+  const factory GameHubEvent.turnChanged({
+    required String currentPlayerId,
+    required int turnNumber,
+  }) = GameHubTurnChanged;
+
+  const factory GameHubEvent.nobleAwarded({
+    required String playerId,
+    required String nobleId,
+  }) = GameHubNobleAwarded;
+
+  const factory GameHubEvent.nobleChoiceRequired({
+    required String playerId,
+    required List<String> candidateNobleIds,
+  }) = GameHubNobleChoiceRequired;
+
+  const factory GameHubEvent.playerJoined({
+    required String userId,
+    required String nickname,
+  }) = GameHubPlayerJoined;
+
+  const factory GameHubEvent.playerLeft({
+    required String userId,
+    required String nickname,
+  }) = GameHubPlayerLeft;
+
+  const factory GameHubEvent.finalRoundTriggered({
+    required String triggeredBy,
+    required String lastTurnPlayerId,
+  }) = GameHubFinalRoundTriggered;
+
+  const factory GameHubEvent.gameOver({
+    required String winnerId,
+    required List<FinalScore> finalScores,
+    String? tieBreakReason,
+  }) = GameHubGameOver;
+
+  const factory GameHubEvent.chatMessage({
+    required String playerId,
+    required String text,
+    required DateTime ts,
+  }) = GameHubChatMessage;
+
+  const factory GameHubEvent.emoteReceived({
+    required String playerId,
+    required String emoteId,
+    required DateTime ts,
+  }) = GameHubEmoteReceived;
+
+  const factory GameHubEvent.errorOccurred({
+    required String code,
+    required String message,
+  }) = GameHubErrorOccurred;
+}
+
+/// hubConnection.on(methodName, args) 콜백에서 넘어오는 원시 인자를
+/// GameHubEvent로 정규화합니다. args[0]은 대부분 README 8절 "응답" 컬럼의
+/// JSON 객체 하나입니다.
+GameHubEvent parseGameHubEvent(String method, List<Object?>? args) {
+  final raw = (args != null && args.isNotEmpty) ? args[0] : null;
+  final json = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+
+  List<Map<String, dynamic>>? patchOf(dynamic value) {
+    if (value is! List) return null;
+    return value.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  switch (method) {
+    case 'StateSync':
+      return GameHubEvent.stateSync(
+        state: json['state'] is Map
+            ? GameState.fromJson(Map<String, dynamic>.from(json['state']))
+            : null,
+        patch: patchOf(json['patch']),
+        sequence: json['sequence'] as int,
+      );
+    case 'ActionResult':
+      return GameHubEvent.actionResult(
+        success: json['success'] as bool? ?? false,
+        error: json['error'] as String?,
+        patch: patchOf(json['patch']),
+      );
+    case 'TurnChanged':
+      return GameHubEvent.turnChanged(
+        currentPlayerId: json['currentPlayerId'] as String,
+        turnNumber: json['turnNumber'] as int,
+      );
+    case 'NobleAwarded':
+      return GameHubEvent.nobleAwarded(
+        playerId: json['playerId'] as String,
+        nobleId: json['nobleId'] as String,
+      );
+    case 'NobleChoiceRequired':
+      return GameHubEvent.nobleChoiceRequired(
+        playerId: json['playerId'] as String,
+        candidateNobleIds: (json['candidateNobleIds'] as List)
+            .map((e) => e as String)
+            .toList(),
+      );
+    case 'PlayerJoined':
+      return GameHubEvent.playerJoined(
+        userId: json['userId'] as String,
+        nickname: json['nickname'] as String,
+      );
+    case 'PlayerLeft':
+      return GameHubEvent.playerLeft(
+        userId: json['userId'] as String,
+        nickname: json['nickname'] as String,
+      );
+    case 'FinalRoundTriggered':
+      return GameHubEvent.finalRoundTriggered(
+        triggeredBy: json['triggeredBy'] as String,
+        lastTurnPlayerId: json['lastTurnPlayerId'] as String,
+      );
+    case 'GameOver':
+      return GameHubEvent.gameOver(
+        winnerId: json['winnerId'] as String,
+        finalScores: (json['finalScores'] as List)
+            .map((e) => FinalScore(
+                  userId: (e as Map)['userId'] as String,
+                  score: e['score'] as int,
+                ))
+            .toList(),
+        tieBreakReason: json['tieBreakReason'] as String?,
+      );
+    case 'ChatMessage':
+      return GameHubEvent.chatMessage(
+        playerId: json['playerId'] as String,
+        text: json['text'] as String,
+        ts: DateTime.parse(json['ts'] as String),
+      );
+    case 'EmoteReceived':
+      return GameHubEvent.emoteReceived(
+        playerId: json['playerId'] as String,
+        emoteId: json['emoteId'] as String,
+        ts: DateTime.parse(json['ts'] as String),
+      );
+    case 'ErrorOccurred':
+      return GameHubEvent.errorOccurred(
+        code: json['code'] as String,
+        message: json['message'] as String,
+      );
+    default:
+      return GameHubEvent.errorOccurred(
+        code: 'UNKNOWN_EVENT',
+        message: '알 수 없는 GameHub 이벤트: $method',
+      );
+  }
+}
