@@ -113,7 +113,7 @@
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
-| GET | `/users/me` | 내 프로필 조회 | 없음 | `{"userId": "u_1024", "nickname": "스플랜더왕", "provider": "email", "linkedProviders": ["kakao"], "avatarUrl": "https://cdn.splendor-online.com/avatars/u_1024.png", "createdAt": "2026-07-10T09:00:00Z"}` | 인증 필요 |
+| GET | `/users/{userID}` | 프로필 조회 | 없음 | `{"userId": "u_1024", "nickname": "스플랜더왕", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_1024.png", "createdAt": "2026-07-10T09:00:00Z", "recentGames": [{"gameId": "g_1024", "playersNumber": 3, "gameType": "Unranked", "place": 2}], "rankings": {"2": {"rank": 210, "mmr": 1710, "gamesPlayedSeason": 9, "avgPlace": 1.7}, "3": {"rank": 357, "mmr": 1820, "gamesPlayedSeason": 38, "avgPlace": 2.1}, "4": {"rank": 512, "mmr": 1655, "gamesPlayedSeason": 15, "avgPlace": 2.6}}}` | `rankings`는 인원수(`2`\|`3`\|`4`)별 랭킹전 MMR·순위·이번 시즌 게임 수·평균 등수(6. 리더보드 API 참고) |
 | PATCH | `/users/me` | 닉네임/아바타 수정 | `{"nickname": "새로운닉네임", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_1024_v2.png"}` (둘 다 선택) | `{"userId": "u_1024", "nickname": "새로운닉네임", "provider": "email", "linkedProviders": ["kakao"], "avatarUrl": "https://cdn.splendor-online.com/avatars/u_1024_v2.png", "createdAt": "2026-07-10T09:00:00Z"}` | 인증 필요 |
 | GET | `/users/{userId}/stats` | 전적 조회 | 없음 | `{"userId": "u_1024", "gamesPlayed": 42, "wins": 27, "avgScore": 15.4, "avgTurns": 23.1}` | 인증 필요 |
 | GET | `/users/search` | 닉네임으로 유저 검색 | Query: `nickname=스플랜더` | `{"users": [{"userId": "u_2048", "nickname": "스플랜더고수", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_2048.png"}]}` | 친구 추가 시 사용 |
@@ -150,10 +150,18 @@
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
 | GET | `/games/{gameId}/state` | 게임 상태 스냅샷 조회 | 없음 | GameState 객체(10.1 스키마 참고, 예: `{"gameId": "g_9911", "phase": "PLAYING", "currentPlayerId": "u_1024", "sequence": 42, ...}`) | 관전/디버깅/재접속 폴백용 |
-| GET | `/games/{gameId}/history` | 턴별 액션 로그 조회 | Query: `page=1&limit=50` (둘 다 선택) | `{"actions": [{"turnNumber": 3, "playerId": "u_1024", "actionType": "TAKE_TOKENS", "payload": {"gems": ["diamond", "sapphire", "emerald"]}, "ts": "2026-07-10T09:20:11Z"}], "total": 48}` | 리플레이용 |
+| GET | `/replay/{gameId}` | 게임 리플레이 조회 | 없음 | `{"actions": [{"turnNumber": 3, "playerId": "u_1024", "actionType": "TAKE_TOKENS", "actionPayload": {"gems": ["diamond", "sapphire", "emerald"], "currentState": [게임 상태 모두 포함]}], "actionsTotal": 48}` | 리플레이용 |
 
 ---
-## 6. GameHub 메서드 (Client → Server, Flutter `hubConnection.invoke()`)
+## 6. 리더보드(Leaderboard) API (REST)
+
+| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
+|---|---|---|---|---|---|
+| GET | `/leaderboard/{playerCount}` | 인원수별 랭킹 목록 조회 | Query: `page=1` (`playerCount`는 `2`\|`3`\|`4`, `page`는 1부터 시작하며 100명 단위로 페이지네이션, 기본 1) | `{"playerCount": 3, "page": 1, "limit": 100, "total": 5820, "entries": [{"rank": 1, "userId": "u_2048", "nickname": "스플랜더고수", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_2048.png", "mmr": 2450, "avgPlace": 1.4, "gamesPlayedSeason": 124}], "myRank": {"rank": 357, "userId": "u_1024", "nickname": "스플랜더왕", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_1024.png", "mmr": 1820, "avgPlace": 2.1, "gamesPlayedSeason": 38}}` | 인증 필요(`myRank` 산출용), `page=1`은 1~100등, `page=2`는 101~200등, `page=3`은 201~300등 … 무한 스크롤 시 `page`를 증가시켜 재호출 |
+| GET | `/leaderboard/{playerCount}/search` | 닉네임/유저ID로 랭킹 검색 | Query: `query=스플랜더` (`playerCount`는 `2`\|`3`\|`4`, `query`가 유저ID와 정확히 일치하거나 닉네임에 포함되는 유저를 함께 검색) | `{"playerCount": 3, "query": "스플랜더", "total": 2, "entries": [{"rank": 1, "userId": "u_2048", "nickname": "스플랜더고수", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_2048.png", "mmr": 2450, "avgPlace": 1.4, "gamesPlayedSeason": 124}]}` | 인증 필요, 결과는 `rank` 오름차순, 최대 100건 |
+
+---
+## 7. GameHub 메서드 (Client → Server, Flutter `hubConnection.invoke()`)
 
 Hub: `/hubs/game` · 인터페이스: `IGameHub`
 
@@ -172,7 +180,7 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
 | INVOKE | `RequestResync` | 재접속 시 상태 재동기화 | `lastSequence`: `128` (int) | 호출자에게만 `StateSync`(full 또는 delta) 콜백 | 재연결(`onreconnected`) 직후 호출 |
 
 ---
-## 7. GameHub 콜백 (Server → Client, Flutter `hubConnection.on()`)
+## 8. GameHub 콜백 (Server → Client, Flutter `hubConnection.on()`)
 
 인터페이스: `IGameClient`
 
@@ -190,20 +198,20 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
 | ON | `ChatMessage` | 채팅 수신 | - | `{"playerId": "u_2048", "text": "안녕하세요!", "ts": "2026-07-10T09:21:00Z"}` | **발신자와 친구인 클라이언트에게만** push됨 |
 | ON | `EmoteReceived` | 감정표현 수신 | - | `{"playerId": "u_2048", "emoteId": "emote_thumbsup", "ts": "2026-07-10T09:21:05Z"}` | 방 전체 브로드캐스트(친구 제한 없음) |
 | ON | `ErrorOccurred` | 비동기 오류 통지 | - | `{"code": "NOT_YOUR_TURN", "message": "현재 당신의 턴이 아닙니다."}` | `invoke()` 예외와 별개(세션 강제종료 등) |
-## 8. SocialHub (친구 · 로비 채팅 전용, 신규)
+## 9. SocialHub (친구 · 로비 채팅 전용, 신규)
 
 Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialClient`(Server→Client)
 
 이 Hub는 특정 게임 방(Room)에 종속되지 않고 **로그인 직후부터 앱이 살아있는 동안(로비 포함) 상시 연결을 유지**하며, 친구 프레즌스·요청 알림·친구 간 1:1 채팅을 처리한다. `GameHub`와는 별도 연결이며, 로그아웃 또는 앱 종료 시에만 해제한다.
 
-### 8.1 Client → Server
+### 9.1 Client → Server
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
 | INVOKE | `SendFriendMessage` | 친구에게 1:1 채팅 전송(로비/게임 화면 무관) | `{"toUserId": "u_2048", "text": "오늘 한 판 할래?"}` | 없음(상대에게 `FriendMessageReceived` 전달) | 친구 관계 아니면 `HubException`(`NOT_FRIENDS`) |
 | INVOKE | `SetPresence` | 내 접속 상태 갱신 | `{"status": "online"}` (`online`\|`away`) | 없음(친구들에게 `FriendStatusChanged` 브로드캐스트) | `GameHub.JoinRoom` 호출 시 서버가 자동으로 `"in_game"`으로 전환, `LeaveRoom` 시 원복 |
 
-### 8.2 Server → Client
+### 9.2 Server → Client
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
@@ -214,7 +222,7 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 
 ---
 
-## 9. 에러 코드
+## 10. 에러 코드
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
@@ -265,7 +273,7 @@ npm run dev   # 또는 python main.py 등
 | 분류 | 사용 기술 |
 |---|---|
 | 핵심 기술 |  |
-| 실행 환경 |  |
+| 실행 환경 | Flutter + Flame 기반 |
 | 데이터 저장 |  |
 | 외부 API / 서비스 |  |
 | 기타 |  |
