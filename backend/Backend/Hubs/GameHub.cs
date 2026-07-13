@@ -25,6 +25,14 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var userId = Context.User!.GetUserId();
+
+        var roomIds = await db.RoomPlayers
+            .Where(p => p.UserId == userId)
+            .Select(p => p.RoomId)
+            .ToListAsync();
+        foreach (var roomId in roomIds)
+            await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
+
         if (await presence.DisconnectAsync(userId))
             await BroadcastPresenceAsync(userId, online: false);
 
@@ -52,7 +60,8 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
         if (state is not null)
             await Clients.Caller.SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
 
-        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerJoined", new { userId });
+        var nickname = await db.Users.Where(u => u.Id == userId).Select(u => u.Nickname).FirstAsync();
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerJoined", new { userId, nickname });
     }
 
     public async Task LeaveRoom(int roomId)
