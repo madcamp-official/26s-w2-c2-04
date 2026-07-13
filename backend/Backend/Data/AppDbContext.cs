@@ -70,9 +70,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<Game>()
             .HasOne(g => g.Room)
-            .WithOne(r => r.Game)
-            .HasForeignKey<Game>(g => g.RoomId)
+            .WithMany(r => r.Games)
+            .HasForeignKey(g => g.RoomId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // 방마다 여러 판(재시작)은 허용하되, 동시에 두 개의 PLAYING 게임이 생기는 건 막는다.
+        modelBuilder.Entity<Game>()
+            .HasIndex(g => g.RoomId)
+            .HasDatabaseName("IX_Games_RoomId_ActiveUnique")
+            .IsUnique()
+            .HasFilter("\"Status\" = 0"); // GameStatus.Playing = 0
 
         modelBuilder.Entity<GameAction>()
             .HasOne(a => a.Game)

@@ -11,14 +11,11 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Hubs;
 
 [Authorize]
-public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore presence) : Hub
+public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore presence, IHubContext<SocialHub> socialHub) : Hub
 {
     public override async Task OnConnectedAsync()
     {
-        var userId = Context.User!.GetUserId();
-        if (await presence.ConnectAsync(userId))
-            await BroadcastPresenceAsync(userId, online: true);
-
+        await presence.ConnectGameAsync(Context.User!.GetUserId());
         await base.OnConnectedAsync();
     }
 
@@ -26,35 +23,29 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
     {
         var userId = Context.User!.GetUserId();
 
-        var roomIds = await db.RoomPlayers
-            .Where(p => p.UserId == userId)
-            .Select(p => p.RoomId)
-            .ToListAsync();
-        foreach (var roomId in roomIds)
-            await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
-
-        if (await presence.DisconnectAsync(userId))
-            await BroadcastPresenceAsync(userId, online: false);
+        // 같은 유저의 다른 탭/기기가 아직 GameHub에 붙어있으면(마지막 연결이 아니면) 방 이탈 처리는 하지 않는다.
+        // (온라인/오프라인 프레즌스는 SocialHub 연결 기준이라 여기서는 다루지 않는다.)
+        if (await presence.DisconnectGameAsync(userId))
+            await RoomDepartureService.HandleUserGoingOfflineAsync(db, stateStore, Clients, socialHub.Clients, presence, userId);
 
         await base.OnDisconnectedAsync(exception);
-    }
-
-    private async Task BroadcastPresenceAsync(int userId, bool online)
-    {
-        var friendIds = await Endpoints.FriendEndpoints.GetFriendIdsAsync(db, userId);
-        if (friendIds.Count > 0)
-            await Clients.Users(friendIds.Select(id => id.ToString()).ToList())
-                .SendAsync("FriendPresenceChanged", new { userId, online });
     }
 
     public async Task JoinRoom(int roomId)
     {
         var userId = Context.User!.GetUserId();
-        var isMember = await db.RoomPlayers.AnyAsync(p => p.RoomId == roomId && p.UserId == userId);
-        if (!isMember)
+        var membership = await db.RoomPlayers.FirstOrDefaultAsync(p => p.RoomId == roomId && p.UserId == userId);
+        if (membership is null)
             throw new HubException("NOT_A_MEMBER");
 
         await Groups.AddToGroupAsync(Context.ConnectionId, GameHubMessages.GroupName(roomId));
+
+        // 유예 상태(연결 끊김/로그아웃 후 1분 내 재접속)였다면 취소한다.
+        await RoomDepartureService.CancelPendingDepartureAsync(db, Clients, membership);
+
+        await presence.SetInGameAsync(userId, true);
+        await SocialHub.BroadcastStatusAsync(db, presence, socialHub.Clients, userId);
+        await stateStore.MarkPlayerConnectedAsync(roomId, userId);
 
         var state = await stateStore.LoadAsync(roomId);
         if (state is not null)
@@ -68,7 +59,15 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
     {
         var userId = Context.User!.GetUserId();
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, GameHubMessages.GroupName(roomId));
-        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
+
+        // REST /leave가 이미 처리했다면(정상적인 "REST leave → Hub LeaveRoom" 흐름) 멤버십이 없으니 여기서 끝.
+        // REST 없이 Hub만 단독으로 호출된 경우(예: 로우레벨 테스트)에는 여기서 실제 이탈 처리를 전담한다.
+        var room = await db.Rooms.Include(r => r.Players).FirstOrDefaultAsync(r => r.Id == roomId);
+        var player = room?.Players.FirstOrDefault(p => p.UserId == userId);
+        if (room is null || player is null)
+            return;
+
+        await RoomDepartureService.FinalizePlayerDepartureAsync(db, stateStore, Clients, socialHub.Clients, presence, room, player);
     }
 
     public async Task StartGame(int roomId)
@@ -129,7 +128,16 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
     private async Task HandleActionAsync(
         int roomId, int userId, string actionType, object payload, Func<GameState, ActionOutcome> action)
     {
-        await using var gameLock = await stateStore.AcquireLockAsync(roomId);
+        IAsyncDisposable gameLock;
+        try
+        {
+            gameLock = await stateStore.AcquireLockAsync(roomId);
+        }
+        catch (TimeoutException)
+        {
+            throw new HubException("SERVER_BUSY");
+        }
+        await using var _ = gameLock;
 
         var state = await stateStore.LoadAsync(roomId) ?? throw new HubException("GAME_NOT_FOUND");
         var previousPlayerId = state.CurrentPlayerId;
@@ -146,7 +154,7 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
 
         await stateStore.SaveAsync(roomId, state);
 
-        var game = await db.Games.FirstAsync(g => g.RoomId == roomId);
+        var game = await db.Games.FirstAsync(g => g.RoomId == roomId && g.Status == GameStatus.Playing);
         db.GameActions.Add(new GameAction
         {
             GameId = game.Id,
@@ -196,7 +204,7 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
         await db.SaveChangesAsync();
     }
 
-    private static async Task RecordResultsAsync(
+    internal static async Task RecordResultsAsync(
         AppDbContext db, int gameId, Room room, GameState state, IReadOnlyList<PlayerScore> finalScores)
     {
         var playerCount = state.PlayerOrder.Count;
@@ -242,7 +250,7 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
         foreach (var (userId, place, _) in eloInput)
         {
             var ranking = rankings[userId];
-            ranking.Mmr += deltas[userId];
+            ranking.Mmr = Math.Max(0, ranking.Mmr + deltas[userId]);
             ranking.GamesPlayed++;
             ranking.TotalPlaceSum += place;
             ranking.UpdatedAt = DateTime.UtcNow;

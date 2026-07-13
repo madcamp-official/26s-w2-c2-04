@@ -17,7 +17,7 @@ public record FriendResponse(
     int UserId,
     string Nickname,
     string? AvatarUrl,
-    bool Online,
+    string Status,
     DateTime FriendsSince);
 
 public record FriendListResponse(List<FriendResponse> Friends);

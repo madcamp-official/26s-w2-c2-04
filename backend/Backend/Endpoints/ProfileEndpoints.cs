@@ -39,7 +39,12 @@ public static class ProfileEndpoints
 
             using var stream = new MemoryStream();
             await file.CopyToAsync(stream);
-            user.AvatarImage = stream.ToArray();
+            var bytes = stream.ToArray();
+
+            if (!HasValidImageSignature(bytes, file.ContentType))
+                return Results.BadRequest(new { code = "INVALID_PAYLOAD", message = "파일 내용이 선언된 이미지 형식과 일치하지 않습니다." });
+
+            user.AvatarImage = bytes;
             user.AvatarContentType = file.ContentType;
             await db.SaveChangesAsync();
 
@@ -74,11 +79,26 @@ public static class ProfileEndpoints
             .WithName("GetAvatar");
     }
 
+    /// <summary>업로드된 바이트가 실제로 선언한 이미지 형식의 매직 넘버로 시작하는지 확인한다(Content-Type 헤더는 클라이언트가 조작 가능).</summary>
+    private static bool HasValidImageSignature(byte[] bytes, string contentType) => contentType switch
+    {
+        "image/png" => bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47,
+        "image/jpeg" => bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
+        "image/webp" => bytes.Length >= 12
+            && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
+            && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P',
+        _ => false,
+    };
+
     private static async Task<IResult> BuildProfileAsync(AppDbContext db, int userId)
     {
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        var user = await db.Users
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.Id, u.Nickname, HasAvatar = u.AvatarImage != null })
+            .FirstOrDefaultAsync();
         if (user is null)
             return Results.NotFound();
+        var avatarUrl = user.HasAvatar ? $"/profile/{user.Id}/avatar" : null;
 
         var rankings = await db.PlayerRankings
             .Where(pr => pr.UserId == userId)
@@ -104,6 +124,6 @@ public static class ProfileEndpoints
             .ToListAsync();
 
         return Results.Ok(new ProfileResponse(
-            user.Id, user.Nickname, user.AvatarUrl, totalGamesPlayed, overallAvgPlace, rankingSummaries, recentMatches));
+            user.Id, user.Nickname, avatarUrl, totalGamesPlayed, overallAvgPlace, rankingSummaries, recentMatches));
     }
 }

@@ -226,6 +226,9 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 |---|---|---|---|---|---|
 | ON | `FriendRequestReceived` | 친구 요청 수신 | - | `{"requestId": "fr_7788", "fromUserId": "u_2048", "fromNickname": "김도현"}` | REST `POST /friends/requests` 발생 시 실시간 push |
 | ON | `FriendRequestAccepted` | 내가 보낸 요청이 수락됨 | - | `{"friendUserId": "u_2048", "friendNickname": "김도현"}` | 요청을 보낸 쪽에 push |
+| ON | `FriendRequestDeclined` | 내가 보낸 요청이 거절됨 | - | `{"requestId": "fr_7788", "byUserId": "u_2048"}` | REST `DELETE /friends/requests/{requestId}`를 수신자가 호출했을 때, 요청 보낸 쪽에 push(구현 시 추가된 항목) |
+| ON | `FriendRequestCancelled` | 상대가 보낸 요청을 취소함 | - | `{"requestId": "fr_7788", "byUserId": "u_1024"}` | REST `DELETE /friends/requests/{requestId}`를 요청자가 호출했을 때, 수신자 쪽에 push(구현 시 추가된 항목) |
+| ON | `FriendRemoved` | 친구가 나를 친구 목록에서 삭제함 | - | `{"byUserId": "u_2048"}` | REST `DELETE /friends/{friendUserId}` 발생 시 상대에게 push(구현 시 추가된 항목) |
 | ON | `FriendStatusChanged` | 친구 접속 상태 변경 | - | `{"friendUserId": "u_2048", "status": "online"}` (`online`\|`offline`\|`in_game`\|`away`) | 로비 친구 목록 실시간 갱신용 |
 | ON | `FriendMessageReceived` | 친구 1:1 채팅 수신 | - | `{"fromUserId": "u_2048", "text": "오늘 한 판 할래?", "ts": "2026-07-10T09:22:00Z"}` | 로비/게임 어느 화면에서도 수신되므로 앱 전역 리스너로 구독 권장 |
 

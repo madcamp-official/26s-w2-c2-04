@@ -93,4 +93,38 @@ public class RankingCalculatorTests
         // 상대별 델타를 평균 내므로 1등이 얻는 폭이 인원수와 무관하게 비슷한 스케일이어야 함
         Assert.InRange(fourPlayerDeltas[1], twoPlayerDeltas[1] - 5, twoPlayerDeltas[1] + 5);
     }
+
+    [Theory]
+    [InlineData(1500, 1500, 1500, 1500)]
+    [InlineData(1200, 1450, 1600, 1900)]
+    [InlineData(1000, 1005, 1010, 1015)]
+    [InlineData(900, 1700, 1450, 1300)]
+    public void FourPlayers_UnevenMmr_DeltasSumToExactlyZero(int mmr1, int mmr2, int mmr3, int mmr4)
+    {
+        var deltas = RankingCalculator.CalculateMmrDeltas(
+        [
+            (UserId: 1, Place: 1, Mmr: mmr1),
+            (UserId: 2, Place: 2, Mmr: mmr2),
+            (UserId: 3, Place: 3, Mmr: mmr3),
+            (UserId: 4, Place: 4, Mmr: mmr4),
+        ]);
+
+        // 개별 반올림 오차 때문에 비대칭 MMR 조합에서는 합이 0에서 벗어날 수 있었던 버그의 회귀 테스트.
+        Assert.Equal(0, deltas.Values.Sum());
+    }
+
+    [Theory]
+    [InlineData(1500, 1500, 1500)]
+    [InlineData(1300, 1550, 1720)]
+    public void ThreePlayers_DeltasSumToExactlyZero(int mmr1, int mmr2, int mmr3)
+    {
+        var deltas = RankingCalculator.CalculateMmrDeltas(
+        [
+            (UserId: 1, Place: 1, Mmr: mmr1),
+            (UserId: 2, Place: 2, Mmr: mmr2),
+            (UserId: 3, Place: 3, Mmr: mmr3),
+        ]);
+
+        Assert.Equal(0, deltas.Values.Sum());
+    }
 }

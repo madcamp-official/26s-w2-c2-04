@@ -34,6 +34,7 @@ public class GameState
     public GamePhase Phase { get; set; } = GamePhase.Playing;
     public int? LastTurnPlayerId { get; set; }
     public int Sequence { get; set; }
+    public List<string> PendingNobleChoiceIds { get; set; } = new();
 
     public int CurrentPlayerId => PlayerOrder[CurrentPlayerIndex];
 }

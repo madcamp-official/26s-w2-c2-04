@@ -125,7 +125,10 @@
     background: #d1d5db;
     margin-right: 6px;
   }
-  .online-dot.online { background: #22c55e; }
+  .online-dot.online, .online-dot.status-online { background: #22c55e; }
+  .online-dot.status-away { background: #f59e0b; }
+  .online-dot.status-in_game { background: #2563eb; }
+  .online-dot.status-offline { background: #d1d5db; }
   .friend-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 13px; }
   .friend-row .actions button { margin-top: 0; padding: 4px 8px; font-size: 12px; }
   #messageThread { max-height: 260px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; margin: 8px 0; background: #fafafa; }
@@ -387,6 +390,18 @@
 </section>
 
 <section>
+  <h2>SocialHub 연결 <span id="socialHubStatus" class="hub-status">연결 안 됨</span></h2>
+  <div style="font-size:12px;color:#666;margin-bottom:8px">
+    친구 요청/수락/거절/취소/삭제·1:1 메시지·프레즌스는 전부 이 연결(/hubs/social)로 실시간 수신됩니다.
+    README 9절 스펙대로 로그인 직후 자동으로 연결되므로 평소엔 버튼을 누를 필요가 없습니다(연결이 끊겼을 때 재연결용).
+  </div>
+  <button id="btnSocialConnect">연결(Connect)</button>
+  <button id="btnSocialDisconnect" class="secondary">연결 해제</button>
+  <button id="btnSetPresenceOnline">SetPresence(online)</button>
+  <button id="btnSetPresenceAway" class="secondary">SetPresence(away)</button>
+</section>
+
+<section>
   <h2>게임 상태</h2>
   <div id="gameSummary" style="font-size:13px;margin-bottom:8px;color:#333">아직 상태 없음 (JoinRoom을 호출하면 StateSync를 받습니다)</div>
   <div id="gameBoard"></div>
@@ -461,7 +476,10 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
     email: f.get('email'), password: f.get('password'), nickname: f.get('nickname'),
   }, false);
   log('POST /auth/register', result);
-  if (result.status === 201 || result.status === 200) saveAuth(result.body);
+  if (result.status === 201 || result.status === 200) {
+    saveAuth(result.body);
+    connectSocialHub().catch((err) => logGameEvent('social auto-connect 실패', { message: String(err) }));
+  }
 });
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -471,7 +489,10 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     email: f.get('email'), password: f.get('password'),
   }, false);
   log('POST /auth/login', result);
-  if (result.status === 200) saveAuth(result.body);
+  if (result.status === 200) {
+    saveAuth(result.body);
+    connectSocialHub().catch((err) => logGameEvent('social auto-connect 실패', { message: String(err) }));
+  }
 });
 
 document.getElementById('btnMe').addEventListener('click', async () => {
@@ -481,6 +502,7 @@ document.getElementById('btnMe').addEventListener('click', async () => {
 document.getElementById('btnLogout').addEventListener('click', async () => {
   const result = await api('/auth/logout', 'POST');
   log('POST /auth/logout', result);
+  if (socialConnection) { await socialConnection.stop(); socialConnection = null; setSocialHubStatus(false); }
   clearAuth();
 });
 
@@ -572,6 +594,21 @@ function removeRoomMember(userId) {
   renderRoomMembers();
 }
 
+function setRoomHost(newHostId) {
+  if (!currentRoomMembers) return;
+  currentRoomMembers.hostId = newHostId;
+  for (const m of currentRoomMembers.members.values()) m.isHost = m.userId === newHostId;
+  renderRoomMembers();
+}
+
+function setMemberDisconnected(userId, disconnected) {
+  if (!currentRoomMembers) return;
+  const m = currentRoomMembers.members.get(userId);
+  if (!m) return;
+  m.disconnected = disconnected;
+  renderRoomMembers();
+}
+
 function renderRoomMembers() {
   const status = document.getElementById('roomMembersStatus');
   const list = document.getElementById('roomMembersList');
@@ -587,7 +624,9 @@ function renderRoomMembers() {
   for (const m of currentRoomMembers.members.values()) {
     const div = document.createElement('div');
     div.className = 'player-card';
-    div.textContent = `${m.isHost ? '👑 ' : ''}${m.nickname} (userId=${m.userId})`;
+    div.textContent =
+      `${m.isHost ? '👑 ' : ''}${m.nickname} (userId=${m.userId})` +
+      (m.disconnected ? ' ⏳ 재접속 대기 중(1분)' : '');
     list.appendChild(div);
   }
 }
@@ -708,10 +747,17 @@ async function connectHub() {
   connection.on('TurnChanged', (msg) => logGameEvent('TurnChanged', msg));
   connection.on('PlayerJoined', (msg) => { logGameEvent('PlayerJoined', msg); addRoomMember(msg.userId, msg.nickname); refreshRooms(); });
   connection.on('PlayerLeft', (msg) => { logGameEvent('PlayerLeft', msg); removeRoomMember(msg.userId); refreshRooms(); });
+  connection.on('HostChanged', (msg) => { logGameEvent('HostChanged', msg); setRoomHost(msg.newHostId); refreshRooms(); });
+  connection.on('PlayerDisconnected', (msg) => { logGameEvent('PlayerDisconnected', msg); setMemberDisconnected(msg.userId, true); });
+  connection.on('PlayerReconnected', (msg) => { logGameEvent('PlayerReconnected', msg); setMemberDisconnected(msg.userId, false); });
   connection.on('NobleAwarded', (msg) => logGameEvent('NobleAwarded', msg));
   connection.on('NobleChoiceRequired', (msg) => logGameEvent('NobleChoiceRequired', msg));
   connection.on('FinalRoundTriggered', (msg) => logGameEvent('FinalRoundTriggered', msg));
-  connection.on('GameOver', (msg) => logGameEvent('GameOver', msg));
+  connection.on('GameOver', (msg) => {
+    logGameEvent('GameOver', msg);
+    refreshRooms();
+    if (msg.reason === 'abandoned') alert('상대방이 모두 나가서 게임이 종료되었습니다. 방은 대기 상태로 돌아갑니다.');
+  });
   connection.on('MatchFound', async (msg) => {
     logGameEvent('MatchFound', msg);
     document.getElementById('selectedRoomId').value = msg.roomId;
@@ -724,12 +770,7 @@ async function connectHub() {
       logGameEvent('auto-join(매칭 성사) 실패', { message: String(err) });
     }
   });
-  connection.on('FriendRequestReceived', (msg) => { logGameEvent('FriendRequestReceived', msg); refreshFriendRequests(); });
-  connection.on('FriendRequestAccepted', (msg) => { logGameEvent('FriendRequestAccepted', msg); refreshFriendRequests(); refreshFriends(); });
-  connection.on('FriendRequestDeclined', (msg) => { logGameEvent('FriendRequestDeclined', msg); refreshFriendRequests(); });
-  connection.on('FriendRequestCancelled', (msg) => { logGameEvent('FriendRequestCancelled', msg); refreshFriendRequests(); });
-  connection.on('FriendRemoved', (msg) => { logGameEvent('FriendRemoved', msg); refreshFriends(); });
-  connection.on('FriendPresenceChanged', (msg) => { logGameEvent('FriendPresenceChanged', msg); refreshFriends(); });
+  // 친구 요청/프레즌스/메시지 관련 이벤트는 전부 SocialHub(connectSocialHub 참고)로 옮겨감.
   connection.on('RoomInvite', (msg) => {
     logGameEvent('RoomInvite', msg);
     if (confirm(`${msg.fromNickname}님이 방(${msg.roomId})에 초대했습니다. 참가하시겠습니까?`)) {
@@ -737,11 +778,6 @@ async function connectHub() {
       document.getElementById('joinPassword').value = '';
       document.getElementById('btnJoinRoom').click();
     }
-  });
-  connection.on('FriendMessage', (msg) => {
-    logGameEvent('FriendMessage', msg);
-    const openTargetId = currentMessageTargetUserId();
-    if (openTargetId && (msg.senderId === openTargetId || msg.receiverId === openTargetId)) loadFriendMessages(openTargetId);
   });
   connection.onclose(() => { hubConnection = null; setHubStatus(false); clearRoomMembers(); });
 
@@ -767,6 +803,73 @@ document.getElementById('btnHubDisconnect').addEventListener('click', async () =
   setHubStatus(false);
   clearRoomMembers();
 });
+
+// ── SocialHub (친구/메시지/프레즌스, README 9절) ──────────────────────
+let socialConnection = null;
+
+function setSocialHubStatus(connected) {
+  const el = document.getElementById('socialHubStatus');
+  el.textContent = connected ? '연결됨' : '연결 안 됨';
+  el.classList.toggle('connected', connected);
+}
+
+async function connectSocialHub() {
+  if (socialConnection) return socialConnection;
+  if (!state.accessToken) throw new Error('먼저 로그인하세요.');
+
+  const connection = new signalR.HubConnectionBuilder()
+    .withUrl(`/hubs/social?access_token=${state.accessToken}`)
+    .withAutomaticReconnect()
+    .build();
+
+  connection.on('FriendRequestReceived', (msg) => { logGameEvent('FriendRequestReceived', msg); refreshFriendRequests(); });
+  connection.on('FriendRequestAccepted', (msg) => { logGameEvent('FriendRequestAccepted', msg); refreshFriendRequests(); refreshFriends(); });
+  connection.on('FriendRequestDeclined', (msg) => { logGameEvent('FriendRequestDeclined', msg); refreshFriendRequests(); });
+  connection.on('FriendRequestCancelled', (msg) => { logGameEvent('FriendRequestCancelled', msg); refreshFriendRequests(); });
+  connection.on('FriendRemoved', (msg) => { logGameEvent('FriendRemoved', msg); refreshFriends(); });
+  connection.on('FriendStatusChanged', (msg) => { logGameEvent('FriendStatusChanged', msg); refreshFriends(); });
+  connection.on('FriendMessageReceived', (msg) => {
+    logGameEvent('FriendMessageReceived', msg);
+    const openTargetId = currentMessageTargetUserId();
+    if (openTargetId && msg.fromUserId === openTargetId) loadFriendMessages(openTargetId);
+  });
+  connection.onclose(() => { socialConnection = null; setSocialHubStatus(false); });
+
+  await connection.start();
+  socialConnection = connection;
+  setSocialHubStatus(true);
+  logGameEvent('social connected', { userId: state.userId });
+  return socialConnection;
+}
+
+document.getElementById('btnSocialConnect').addEventListener('click', async () => {
+  try {
+    await connectSocialHub();
+  } catch (err) {
+    logGameEvent('social connect error', { message: String(err) });
+  }
+});
+
+document.getElementById('btnSocialDisconnect').addEventListener('click', async () => {
+  if (!socialConnection) return;
+  await socialConnection.stop();
+  socialConnection = null;
+  setSocialHubStatus(false);
+});
+
+async function invokeSocialHub(method, ...args) {
+  if (!socialConnection) return alert('먼저 SocialHub에 연결하세요.');
+  try {
+    const result = await socialConnection.invoke(method, ...args);
+    logGameEvent(`invoke ${method} 성공`, { args });
+    return result;
+  } catch (err) {
+    logGameEvent(`invoke ${method} 실패`, { message: String(err) });
+  }
+}
+
+document.getElementById('btnSetPresenceOnline').addEventListener('click', () => invokeSocialHub('SetPresence', 'online'));
+document.getElementById('btnSetPresenceAway').addEventListener('click', () => invokeSocialHub('SetPresence', 'away'));
 
 async function invokeHub(method, ...args) {
   if (!hubConnection) return alert('먼저 GameHub에 연결하세요.');
@@ -1066,7 +1169,9 @@ document.getElementById('btnAvatarDelete').addEventListener('click', async () =>
 });
 
 // ── 친구 ──────────────────────────────────────────────────────────
-// 친구 요청/수락/메시지/방 초대의 실시간 알림은 모두 GameHub 연결(위 connectHub 핸들러 참고)로 받는다.
+// 친구 요청/수락/거절/취소/삭제·메시지·프레즌스의 실시간 알림은 전부 SocialHub 연결
+// (위 connectSocialHub 핸들러 참고, 로그인 시 자동 연결됨)로 받는다. 방 초대(RoomInvite)만
+// 방 그룹과 묶여 있어서 GameHub 쪽에 남아있다.
 document.getElementById('btnFriendSearch').addEventListener('click', async () => {
   const query = encodeURIComponent(document.getElementById('friendSearchQuery').value || '');
   const result = await api(`/friends/search?query=${query}`);
@@ -1149,7 +1254,7 @@ async function refreshFriends() {
   for (const f of friends) {
     const div = document.createElement('div');
     div.className = 'friend-row';
-    div.innerHTML = `<span><span class="online-dot ${f.online ? 'online' : ''}"></span>${f.nickname} (userId=${f.userId})</span>`;
+    div.innerHTML = `<span><span class="online-dot status-${f.status}" title="${f.status}"></span>${f.nickname} (userId=${f.userId}, ${f.status})</span>`;
     const actions = document.createElement('span');
     actions.className = 'actions';
 
@@ -1224,11 +1329,14 @@ document.getElementById('btnMessageSend').addEventListener('click', async () => 
   const bodyInput = document.getElementById('messageBody');
   const body = bodyInput.value.trim();
   if (!body) return;
-  const result = await api(`/friends/${userId}/messages`, 'POST', { body });
-  log(`POST /friends/${userId}/messages`, result);
-  if (result.status === 201) {
+  // README SocialHub 스펙대로 REST 대신 SendFriendMessage invoke로 전송한다.
+  try {
+    await connectSocialHub();
+    await invokeSocialHub('SendFriendMessage', userId, body);
     bodyInput.value = '';
     loadFriendMessages(userId);
+  } catch (err) {
+    logGameEvent('SendFriendMessage 실패', { message: String(err) });
   }
 });
 </script>

@@ -22,10 +22,11 @@ public static class FriendEndpoints
             var userId = http.User.GetUserId();
             var searchTerm = query ?? string.Empty;
             var searchUserId = int.TryParse(searchTerm, out var parsedId) ? parsedId : (int?)null;
+            var likePattern = $"%{LeaderboardEndpoints.EscapeLikePattern(searchTerm)}%";
 
             var matches = await db.Users
                 .Where(u => u.Id != userId
-                    && (u.Nickname.Contains(searchTerm) || u.Id == searchUserId))
+                    && (EF.Functions.Like(u.Nickname, likePattern, "\\") || u.Id == searchUserId))
                 .OrderBy(u => u.Nickname)
                 .Take(SearchLimit)
                 .Select(u => new FriendSearchItemResponse(u.Id, u.Nickname, u.AvatarUrl))
@@ -35,7 +36,7 @@ public static class FriendEndpoints
         })
             .WithName("SearchFriendCandidates");
 
-        group.MapPost("/requests", async (SendFriendRequestRequest request, HttpContext http, AppDbContext db, IHubContext<GameHub> hubContext) =>
+        group.MapPost("/requests", async (SendFriendRequestRequest request, HttpContext http, AppDbContext db, IHubContext<SocialHub> hubContext) =>
         {
             var userId = http.User.GetUserId();
 
@@ -67,7 +68,7 @@ public static class FriendEndpoints
                 await hubContext.Clients.User(existing.RequesterId.ToString())
                     .SendAsync("FriendRequestAccepted", new { requestId = existing.Id, byUserId = userId, byNickname = me.Nickname });
 
-                return Results.Ok(new FriendResponse(target.Id, target.Nickname, target.AvatarUrl, false, existing.RespondedAt.Value));
+                return Results.Ok(new FriendResponse(target.Id, target.Nickname, target.AvatarUrl, "offline", existing.RespondedAt.Value));
             }
 
             var friendship = new Friendship { RequesterId = userId, AddresseeId = target.Id, Status = FriendshipStatus.Pending };
@@ -103,7 +104,7 @@ public static class FriendEndpoints
         })
             .WithName("ListFriendRequests");
 
-        group.MapPost("/requests/{requestId:int}/accept", async (int requestId, HttpContext http, AppDbContext db, IHubContext<GameHub> hubContext) =>
+        group.MapPost("/requests/{requestId:int}/accept", async (int requestId, HttpContext http, AppDbContext db, IHubContext<SocialHub> hubContext) =>
         {
             var userId = http.User.GetUserId();
 
@@ -128,11 +129,11 @@ public static class FriendEndpoints
                 .SendAsync("FriendRequestAccepted", new { requestId = request.Id, byUserId = userId, byNickname = me.Nickname });
 
             return Results.Ok(new FriendResponse(
-                request.Requester.Id, request.Requester.Nickname, request.Requester.AvatarUrl, false, request.RespondedAt.Value));
+                request.Requester.Id, request.Requester.Nickname, request.Requester.AvatarUrl, "offline", request.RespondedAt.Value));
         })
             .WithName("AcceptFriendRequest");
 
-        group.MapDelete("/requests/{requestId:int}", async (int requestId, HttpContext http, AppDbContext db, IHubContext<GameHub> hubContext) =>
+        group.MapDelete("/requests/{requestId:int}", async (int requestId, HttpContext http, AppDbContext db, IHubContext<SocialHub> hubContext) =>
         {
             var userId = http.User.GetUserId();
 
@@ -174,11 +175,11 @@ public static class FriendEndpoints
             var others = friendships
                 .Select(f => f.RequesterId == userId ? f.Addressee : f.Requester)
                 .ToList();
-            var onlineIds = await presence.GetOnlineAsync(others.Select(u => u.Id));
+            var statuses = await presence.GetStatusesAsync(others.Select(u => u.Id));
 
             var friends = friendships
                 .Zip(others, (f, other) => new FriendResponse(
-                    other.Id, other.Nickname, other.AvatarUrl, onlineIds.Contains(other.Id), f.RespondedAt ?? f.CreatedAt))
+                    other.Id, other.Nickname, other.AvatarUrl, statuses.GetValueOrDefault(other.Id, "offline"), f.RespondedAt ?? f.CreatedAt))
                 .OrderBy(f => f.Nickname)
                 .ToList();
 
@@ -186,7 +187,7 @@ public static class FriendEndpoints
         })
             .WithName("ListFriends");
 
-        group.MapDelete("/{userId:int}", async (int userId, HttpContext http, AppDbContext db, IHubContext<GameHub> hubContext) =>
+        group.MapDelete("/{userId:int}", async (int userId, HttpContext http, AppDbContext db, IHubContext<SocialHub> hubContext) =>
         {
             var callerId = http.User.GetUserId();
 

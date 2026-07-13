@@ -180,7 +180,9 @@ public static class RoomEndpoints
         })
             .WithName("InviteFriendToRoom");
 
-        group.MapPost("/{roomId:int}/leave", async (int roomId, HttpContext http, AppDbContext db) =>
+        group.MapPost("/{roomId:int}/leave", async (
+            int roomId, HttpContext http, AppDbContext db, GameStateStore stateStore, PresenceStore presence,
+            IHubContext<GameHub> hubContext, IHubContext<SocialHub> socialHubContext) =>
         {
             var userId = http.User.GetUserId();
 
@@ -192,9 +194,8 @@ public static class RoomEndpoints
             if (player is null)
                 return Results.NoContent();
 
-            LeaveRoom(db, room, player);
-
-            await db.SaveChangesAsync();
+            await RoomDepartureService.FinalizePlayerDepartureAsync(
+                db, stateStore, hubContext.Clients, socialHubContext.Clients, presence, room, player);
             return Results.NoContent();
         })
             .WithName("LeaveRoom");
@@ -218,8 +219,16 @@ public static class RoomEndpoints
             if (room.Players.Count < 2)
                 return Results.Conflict(new { code = "NOT_ENOUGH_PLAYERS", message = "최소 2명이 필요합니다." });
 
-            var response = await StartRoomAsync(db, stateStore, hubContext, room);
-            return Results.Ok(response);
+            try
+            {
+                var response = await StartRoomAsync(db, stateStore, hubContext, room);
+                return Results.Ok(response);
+            }
+            catch (DbUpdateException)
+            {
+                // 동시에 두 번 /start가 들어와 PLAYING Game이 이미 만들어진 경우(partial unique index 위반).
+                return Results.Conflict(new { code = "ROOM_ALREADY_STARTED", message = "이미 게임이 시작된 방입니다." });
+            }
         })
             .WithName("StartGame");
 
@@ -249,23 +258,10 @@ public static class RoomEndpoints
     internal static async Task<bool> IsInActiveRoomAsync(AppDbContext db, int userId) =>
         await db.RoomPlayers
             .Include(rp => rp.Room)
-            .AnyAsync(rp => rp.UserId == userId && rp.Room.Status == RoomStatus.Waiting);
+            .AnyAsync(rp => rp.UserId == userId
+                && (rp.Room.Status == RoomStatus.Waiting || rp.Room.Status == RoomStatus.Playing));
 
-    /// <summary>
-    /// 로그아웃 등 인증 로직에서 재사용. 게임이 이미 시작된(PLAYING) 방은 건드리지 않는다.
-    /// </summary>
-    public static async Task LeaveAllWaitingRoomsAsync(AppDbContext db, int userId)
-    {
-        var memberships = await db.RoomPlayers
-            .Include(rp => rp.Room).ThenInclude(r => r.Players)
-            .Where(rp => rp.UserId == userId && rp.Room.Status == RoomStatus.Waiting)
-            .ToListAsync();
-
-        foreach (var membership in memberships)
-            LeaveRoom(db, membership.Room, membership);
-    }
-
-    private static void LeaveRoom(AppDbContext db, Room room, RoomPlayer player)
+    internal static void LeaveRoom(AppDbContext db, Room room, RoomPlayer player)
     {
         db.RoomPlayers.Remove(player);
         room.Players.Remove(player);

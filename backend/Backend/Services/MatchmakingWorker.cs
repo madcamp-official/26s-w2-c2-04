@@ -62,6 +62,25 @@ public class MatchmakingWorker(
         {
             var userIds = group.Select(e => e.UserId).ToList();
 
+            // 큐에 있는 동안 다른 경로(친구 초대 수락 등)로 이미 다른 방에 들어갔거나, 그 사이 매칭을
+            // 취소한 유저가 없는지 방 생성 직전에 재확인한다. 하나라도 걸리면 그룹 전체를 무효화하고
+            // 문제 있는 유저만 큐에서 제거한다 - 나머지는 큐에 남아 다음 틱에 자연스럽게 재매칭된다.
+            var staleUserIds = new List<int>();
+            foreach (var userId in userIds)
+            {
+                if (await RoomEndpoints.IsInActiveRoomAsync(db, userId) || await queueStore.GetEntryAsync(playerCount, userId) is null)
+                    staleUserIds.Add(userId);
+            }
+
+            if (staleUserIds.Count > 0)
+            {
+                await queueStore.RemoveManyAsync(playerCount, staleUserIds);
+                logger.LogWarning(
+                    "매칭 그룹 무효화(이미 다른 방에 있거나 취소됨): playerCount={PlayerCount}, userIds={UserIds}",
+                    playerCount, string.Join(",", staleUserIds));
+                continue;
+            }
+
             var room = new Room
             {
                 HostId = userIds[0],
