@@ -73,4 +73,18 @@ class RoomService {
     final res = await _client.delete('/rooms/$roomId');
     ApiClient.ensureOk(res, '방 삭제에 실패했습니다.');
   }
+
+  /// 랭크 매칭. 호출 즉시 대기 중인 랭크 방에 참가하거나 새로 만들어 응답합니다
+  /// (폴링용 대기열이 아니라 동기 응답). 정원이 그 자리에서 다 차면 응답의
+  /// status가 이미 PLAYING일 수 있습니다.
+  ///
+  /// 이 계약은 아직 팀 내에서 확정되지 않았습니다(백엔드가 매칭을 서버 주도로
+  /// 처리해 바로 게임으로 넘기는 방식으로 바뀔 수 있음). 계약이 바뀌면 이 메서드의
+  /// 반환 타입/파싱만 맞춰 수정하면 되고, 호출부(matchmaking.dart)는 roomId만
+  /// 사용하므로 영향이 크지 않습니다.
+  Future<GameRoom> rankedMatch(int playerCount) async {
+    final res = await _client.post('/matchmaking/$playerCount/ranked');
+    ApiClient.ensureOk(res, '랭크 매칭에 실패했습니다.');
+    return GameRoom.fromJson(jsonDecode(res.body));
+  }
 }

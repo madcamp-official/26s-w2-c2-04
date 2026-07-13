@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/leaderboard.dart';
 import '../state/leaderboard_controller.dart';
+import '../theme/app_theme.dart';
 
 class LeaderboardScreen extends ConsumerStatefulWidget {
   const LeaderboardScreen({super.key});
@@ -63,41 +64,65 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('리더보드'),
+        title: const Text('GUILD STANDINGS'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: _playerCounts.map((n) => Tab(text: '$n인')).toList(),
+          tabs: _playerCounts.map((n) => Tab(text: '$n PLAYER')).toList(),
         ),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: TextField(
-              controller: _searchController,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                hintText: '닉네임 또는 유저 ID로 검색',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: _submitSearch,
+      body: GemBackdrop(
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 4),
+              child: OrnateTitle(kicker: 'Season VII · ranked', title: '리더보드'),
             ),
-          ),
-          Expanded(
-            child: switch (state) {
-              LeaderboardInitial() || LeaderboardLoading() =>
-                const Center(child: CircularProgressIndicator()),
-              LeaderboardError(:final message) =>
-                Center(child: Text('리더보드를 불러오지 못했습니다: $message')),
-              LeaderboardLoaded(:final myRank) => Column(
-                  children: [
-                    if (myRank != null) _MyRankBanner(entry: myRank),
-                    Expanded(child: _buildList(state)),
-                  ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search, size: 18),
+                  hintText: '닉네임 또는 유저 ID로 검색',
                 ),
-            },
-          ),
-        ],
+                onSubmitted: _submitSearch,
+              ),
+            ),
+            Expanded(
+              child: switch (state) {
+                LeaderboardInitial() || LeaderboardLoading() =>
+                  const Center(child: CircularProgressIndicator()),
+                LeaderboardError(:final message) => Center(
+                    child: Text(
+                      '리더보드를 불러오지 못했습니다: $message',
+                      style: const TextStyle(color: AppColors.textMuted),
+                    ),
+                  ),
+                LeaderboardLoaded(:final myRank) => Column(
+                    children: [
+                      if (myRank != null) _MyRankBanner(entry: myRank),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        child: Row(
+                          children: [
+                            SizedBox(width: 48, child: Text('RANK', style: kickerStyle(size: 10))),
+                            Expanded(child: Text('MERCHANT', style: kickerStyle(size: 10))),
+                            SizedBox(width: 70, child: Text('MMR', style: kickerStyle(size: 10))),
+                            SizedBox(width: 50, child: Text('AVG.', style: kickerStyle(size: 10))),
+                          ],
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 20),
+                        child: Divider(height: 1),
+                      ),
+                      Expanded(child: _buildList(state)),
+                    ],
+                  ),
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -105,10 +130,13 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
   Widget _buildList(LeaderboardLoaded state) {
     final entries = state.entries;
     if (entries.isEmpty) {
-      return const Center(child: Text('결과가 없습니다.'));
+      return const Center(
+        child: Text('결과가 없습니다.', style: TextStyle(color: AppColors.textMuted)),
+      );
     }
     return ListView.builder(
       controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
       itemCount: entries.length + (state.hasMore ? 1 : 0),
       itemBuilder: (context, index) {
         if (index >= entries.length) {
@@ -119,14 +147,57 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
         }
         final entry = entries[index];
         final isMe = state.myRank?.playerId == entry.playerId;
-        return ListTile(
-          tileColor: isMe ? Theme.of(context).colorScheme.primaryContainer : null,
-          leading: CircleAvatar(child: Text('${entry.rank}')),
-          title: Text(entry.nickname),
-          subtitle: Text('평균 등수 ${entry.avgPlace.toStringAsFixed(1)} · ${entry.gamesPlayedSeason}판'),
-          trailing: Text('${entry.mmr} MMR'),
-        );
+        return _LeaderboardRow(entry: entry, highlighted: isMe);
       },
+    );
+  }
+}
+
+class _LeaderboardRow extends StatelessWidget {
+  final LeaderboardEntry entry;
+  final bool highlighted;
+  const _LeaderboardRow({required this.entry, required this.highlighted});
+
+  @override
+  Widget build(BuildContext context) {
+    final topThree = entry.rank <= 3;
+    return Container(
+      decoration: BoxDecoration(
+        color: highlighted ? AppColors.goldFaint : null,
+        border: const Border(bottom: BorderSide(color: AppColors.goldHairline)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 48,
+            child: Text(
+              '#${entry.rank}',
+              style: topThree
+                  ? headingStyle(size: 13, color: const Color(0xFFE8C45E), letterSpacing: 0.5)
+                  : const TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              entry.nickname,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.textHeading, fontSize: 14),
+            ),
+          ),
+          SizedBox(
+            width: 70,
+            child: Text('${entry.mmr}', style: const TextStyle(color: AppColors.gold)),
+          ),
+          SizedBox(
+            width: 50,
+            child: Text(
+              entry.avgPlace.toStringAsFixed(1),
+              style: const TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -139,11 +210,23 @@ class _MyRankBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: Theme.of(context).colorScheme.secondaryContainer,
-      padding: const EdgeInsets.all(12),
-      child: Text(
-        '내 순위: ${entry.rank}위 · ${entry.mmr} MMR',
-        style: Theme.of(context).textTheme.titleSmall,
+      margin: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.panelAlt,
+        border: Border.all(color: AppColors.goldFaint),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.military_tech_outlined, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '내 순위: ${entry.rank}위 · ${entry.mmr} MMR',
+              style: headingStyle(size: 13, letterSpacing: 0.8),
+            ),
+          ),
+        ],
       ),
     );
   }

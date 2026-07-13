@@ -8,13 +8,29 @@ import '../models/gem.dart';
 import '../state/auth_controller.dart';
 import '../state/game_controller.dart';
 import '../state/lobby_controller.dart';
+import '../theme/app_theme.dart';
 
 /// 방 대기실 + 실제 게임 진행 화면.
 /// GameHub 연결 전(WAITING)에는 대기실 UI를, 연결 후(PLAYING)에는 보드/토큰/
 /// 카드/귀족/채팅 등 실시간 게임 UI를 보여줍니다.
 class PlayScreen extends ConsumerStatefulWidget {
   final GameRoom room;
-  const PlayScreen({super.key, required this.room});
+
+  /// true면 대기실(플레이어 슬롯/START 버튼) UI를 건너뛰고 바로 GameHub에 연결합니다.
+  /// 방 목록/방장 개념이 없는 진입 경로(예: 랭크 매칭)에서 사용합니다. 이 화면은
+  /// "왜" 자동 연결해야 하는지는 몰라도 되므로, 랭크 여부 같은 도메인 지식을
+  /// widget 파라미터로 들여오지 않습니다.
+  final bool autoConnect;
+
+  /// 방 만들기 화면에서 입력한 표시용 방 이름(로컬 전용, 서버에는 저장되지 않음).
+  final String? localLabel;
+
+  const PlayScreen({
+    super.key,
+    required this.room,
+    this.autoConnect = false,
+    this.localLabel,
+  });
 
   @override
   ConsumerState<PlayScreen> createState() => _PlayScreenState();
@@ -27,6 +43,22 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   bool get _isHost {
     final auth = ref.read(authControllerProvider);
     return auth is AuthAuthenticated && widget.room.hostId == auth.user.userId;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoConnect) {
+      Future.microtask(() {
+        final auth = ref.read(authControllerProvider);
+        if (auth is AuthAuthenticated) {
+          ref.read(gameControllerProvider.notifier).connect(
+                roomId: widget.room.roomId,
+                accessToken: auth.user.accessToken,
+              );
+        }
+      });
+    }
   }
 
   Future<void> _startGame() async {
@@ -101,7 +133,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('방 ${widget.room.roomId}'),
+        title: Text(widget.localLabel ?? '방 ${widget.room.roomId}'),
         actions: [
           IconButton(
             icon: const Icon(Icons.exit_to_app),
@@ -133,11 +165,23 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
             chatController: _chatController,
             onSendChat: _sendChat,
           ),
-        GameDisconnected() => _WaitingRoom(
-            room: widget.room,
-            isHost: _isHost,
-            onStart: _startGame,
-          ),
+        GameDisconnected() => widget.autoConnect
+            ? const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('다른 연금술사들을 기다리는 중입니다…\n정원이 차면 자동으로 시작됩니다.',
+                        textAlign: TextAlign.center),
+                  ],
+                ),
+              )
+            : _WaitingRoom(
+                room: widget.room,
+                isHost: _isHost,
+                onStart: _startGame,
+              ),
       },
     );
   }
@@ -183,44 +227,116 @@ class _WaitingRoom extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: ListView(
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('참가자', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              for (final player in room.players)
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: player.avatarUrl != null
-                        ? NetworkImage(player.avatarUrl!)
-                        : null,
-                    child: player.avatarUrl == null
-                        ? Text(player.nickname.characters.first)
-                        : null,
-                  ),
-                  title: Text(player.nickname),
-                  trailing: player.id == room.hostId
-                      ? const Chip(label: Text('방장'))
-                      : null,
-                ),
-            ],
+    return GemBackdrop(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+            child: OrnateTitle(kicker: 'Private table', title: '방 ${room.roomId}'),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: isHost ? onStart : null,
-              child: Text(isHost ? '게임 시작' : '방장이 시작하기를 기다리는 중...'),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              '${room.maxPlayers}인 테이블',
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
             ),
           ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              children: [
+                for (final player in room.players)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _PlayerSlot(
+                      name: player.nickname,
+                      avatarUrl: player.avatarUrl,
+                      isHost: player.id == room.hostId,
+                    ),
+                  ),
+                for (var i = room.players.length; i < room.maxPlayers; i++)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 10),
+                    child: _PlayerSlot(
+                      name: '자리를 기다리는 중…',
+                      avatarUrl: null,
+                      isHost: false,
+                      empty: true,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: isHost ? onStart : null,
+                child: Text(isHost ? '게임 시작' : '방장이 시작하기를 기다리는 중...'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlayerSlot extends StatelessWidget {
+  final String name;
+  final String? avatarUrl;
+  final bool isHost;
+  final bool empty;
+  const _PlayerSlot({
+    required this.name,
+    required this.avatarUrl,
+    required this.isHost,
+    this.empty = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: empty ? null : AppColors.goldFaint.withValues(alpha: 0.06),
+        border: Border.all(
+          color: empty ? AppColors.goldHairline : AppColors.gold.withValues(alpha: 0.35),
         ),
-      ],
+      ),
+      child: Row(
+        children: [
+          if (empty)
+            const CircleAvatar(
+              backgroundColor: Colors.transparent,
+              child: Icon(Icons.people_outline, color: AppColors.textMuted, size: 18),
+            )
+          else
+            CircleAvatar(
+              backgroundColor: avatarToneFor(name),
+              backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+              child: avatarUrl == null
+                  ? Text(
+                      name.characters.first,
+                      style: const TextStyle(color: AppColors.textHeading, fontSize: 13),
+                    )
+                  : null,
+            ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              name,
+              style: TextStyle(
+                color: empty ? AppColors.textMuted : AppColors.textHeading,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          if (isHost)
+            Text('HOST', style: kickerStyle(size: 10, color: AppColors.gold)),
+        ],
+      ),
     );
   }
 }

@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'screens/login.dart';
 import 'screens/signup.dart';
-import 'screens/lobby.dart';
+import 'screens/home.dart';
 import 'screens/leaderboard.dart';
 import 'state/auth_controller.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const ProviderScope(child: MyApp()));
@@ -18,22 +19,19 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Splendor Multiplayer',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        useMaterial3: true,
-      ),
+      theme: buildAppTheme(),
       home: const _AuthGate(),
       routes: {
         '/login': (context) => const LoginScreen(),
         '/signup': (context) => const SignUpScreen(),
-        '/lobby': (context) => const LobbyScreen(),
+        '/home': (context) => const HomeScreen(),
         '/leaderboard': (context) => const LeaderboardScreen(),
       },
     );
   }
 }
 
-/// 앱 시작 시 저장된 세션(accessToken/refreshToken)이 있으면 로비로,
+/// 앱 시작 시 저장된 세션(accessToken/refreshToken)이 있으면 홈 화면으로,
 /// 없으면 로그인 화면으로 보냅니다.
 class _AuthGate extends ConsumerStatefulWidget {
   const _AuthGate();
@@ -55,7 +53,7 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     return switch (authState) {
-      AuthAuthenticated() => const LobbyScreen(),
+      AuthAuthenticated() => const HomeScreen(),
       _ => const LoginScreen(),
     };
   }
