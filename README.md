@@ -148,7 +148,9 @@
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
-| POST | `/matchmaking/{playerCount}/ranked` | 랭킹전 자동 매칭 | 없음 (`playerCount`는 `2`\|`3`\|`4`) | Room 객체(4번 방 API의 생성 응답과 동일 구조) | 인증 필요. 대기 중인 해당 인원수 랭킹전 방이 있으면 자동 참가, 없으면 자동 생성 후 참가. 정원이 차면 자동으로 게임이 시작됨(SignalR `StateSync` 브로드캐스트). 스킬 기반 매칭은 하지 않고 선착순. 이렇게 만들어진 방은 `GET /rooms` 목록과 `POST /rooms/{roomId}/join`으로는 접근 불가(`ROOM_RANKED_ONLY_VIA_MATCHMAKING`) — 반드시 이 API로만 참가 |
+| POST | `/matchmaking/{playerCount}/ranked` | 랭킹전 대기열 등록 | 없음 (`playerCount`는 `2`\|`3`\|`4`) | `{"status": "QUEUED", "playerCount": 4, "mmr": 1500, "searchRange": 100, "roomId": null}` | 인증 필요. 즉시 방에 들어가지 않고 대기열에 등록됨. 이미 같은 인원수로 대기 중이면 현재 상태를 그대로 반환(멱등), 다른 인원수로 대기 중이면 409(`ALREADY_QUEUED`) |
+| DELETE | `/matchmaking/{playerCount}/ranked` | 매칭 대기열 취소 | 없음 | 204 No Content | 인증 필요 |
+| GET | `/matchmaking/{playerCount}/status` | 매칭 상태 조회(폴링용) | 없음 | `{"status": "QUEUED"\|"MATCHED"\|"NOT_QUEUED", "playerCount": 4, "mmr": 1500, "searchRange": 180, "roomId": null}` | 인증 필요. 매칭 서버는 2초마다 각 인원수 대기열을 훑어 MMR이 비슷한 유저끼리 묶고(대기시간이 길어질수록 허용 범위가 넓어짐), 정원이 차면 방을 만들어 자동으로 게임을 시작함(SignalR `StateSync` 브로드캐스트). 매칭이 성사되면 대기 중이던 유저에게 SignalR `MatchFound` 이벤트(`{"roomId": ..., "playerCount": ...}`)로 즉시 알리고, 상태 조회로도 확인 가능(`status: "MATCHED"`, 1회 소비 후 사라짐). 이렇게 만들어진 방은 `GET /rooms` 목록과 `POST /rooms/{roomId}/join`으로는 접근 불가(`ROOM_RANKED_ONLY_VIA_MATCHMAKING`) |
 
 ---
 ## 5. 게임 조회 API (REST, 읽기 전용)
@@ -198,6 +200,7 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
 | ON | `NobleAwarded` | 귀족 타일 자동 획득 | - | `{"playerId": "u_1024", "nobleId": "n_04"}` | |
 | ON | `NobleChoiceRequired` | 귀족 동시 충족, 선택 필요 | - | `{"playerId": "u_1024", "candidateNobleIds": ["n_04", "n_07"]}` | `ClaimNoble` 호출 유도 |
 | ON | `PlayerJoined` | 방 인원 입장 | - | `{"userId": "u_2048", "nickname": "김도현"}` | |
+| ON | `MatchFound` | 랭킹전 매칭 성사 | - | `{"roomId": "r_5566", "playerCount": 4}` | `POST /matchmaking/{n}/ranked`로 대기열에 등록한 유저에게 매칭이 성사되는 즉시 push. 수신 후 `JoinRoom` 호출 |
 | ON | `PlayerLeft` | 방 인원 퇴장 | - | `{"userId": "u_2048", "nickname": "김도현"}` | |
 | ON | `FinalRoundTriggered` | 15점 달성, 마지막 라운드 진입 | - | `{"triggeredBy": "u_1024", "lastTurnPlayerId": "u_2048"}` | |
 | ON | `GameOver` | 게임 종료 | - | `{"winnerId": "u_1024", "finalScores": [{"userId": "u_1024", "score": 16}, {"userId": "u_2048", "score": 13}], "tieBreakReason": null}` | |
