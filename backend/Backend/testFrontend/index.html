@@ -200,9 +200,12 @@
       </select>
     </label>
   </div>
-  <button id="btnMatchmakingRanked">랭킹전 매칭 시작</button>
+  <button id="btnMatchmakingRanked">랭킹전 매칭 시작(대기열 등록)</button>
+  <button id="btnMatchmakingCancel" class="secondary">매칭 취소</button>
+  <button id="btnMatchmakingStatus" class="secondary">상태 조회</button>
   <div style="font-size:12px;color:#666;margin-top:6px">
-    대기 중인 같은 인원수 랭킹전 방이 있으면 자동 참가, 없으면 자동 생성합니다. 정원이 차면 자동으로 게임이 시작되고 GameHub에 자동 연결됩니다.
+    같은 인원수 대기열에 등록되고, 서버가 2초마다 비슷한 MMR끼리 묶습니다. 대기시간이 길어질수록 탐색 범위가 넓어집니다.
+    매칭이 성사되면 GameHub의 MatchFound 이벤트로 알림을 받고 자동으로 방에 입장합니다(허브 연결이 끊겼다면 상태 조회로도 확인 가능).
   </div>
 </section>
 
@@ -542,6 +545,12 @@ async function connectHub() {
   connection.on('NobleChoiceRequired', (msg) => logGameEvent('NobleChoiceRequired', msg));
   connection.on('FinalRoundTriggered', (msg) => logGameEvent('FinalRoundTriggered', msg));
   connection.on('GameOver', (msg) => logGameEvent('GameOver', msg));
+  connection.on('MatchFound', (msg) => {
+    logGameEvent('MatchFound', msg);
+    document.getElementById('selectedRoomId').value = msg.roomId;
+    document.getElementById('gameRoomId').value = msg.roomId;
+    invokeHub('JoinRoom', msg.roomId).catch((err) => logGameEvent('auto-join(매칭 성사) 실패', { message: String(err) }));
+  });
   connection.onclose(() => { hubConnection = null; setHubStatus(false); });
 
   await connection.start();
@@ -708,23 +717,31 @@ function playerCard(p, currentPlayerId) {
 }
 
 // ── 랭킹전 매칭 / 리더보드 ──────────────────────────────────────────
+// 매칭은 이제 즉시 방에 들어가는 게 아니라 대기열에 등록되고, 서버가 비슷한 MMR끼리 묶이면
+// GameHub의 MatchFound 이벤트로 알려준다(위 connectHub의 핸들러 참고). 그래서 큐에 들어가기 전에
+// 먼저 허브에 연결해 둔다.
 document.getElementById('btnMatchmakingRanked').addEventListener('click', async () => {
   const playerCount = document.getElementById('matchmakingPlayerCount').value;
+  try {
+    await connectHub();
+  } catch (err) {
+    return alert(String(err));
+  }
   const result = await api(`/matchmaking/${playerCount}/ranked`, 'POST');
   log(`POST /matchmaking/${playerCount}/ranked`, result);
-  refreshRooms();
+});
 
-  if (result.status === 200) {
-    const id = result.body.roomId;
-    document.getElementById('selectedRoomId').value = id;
-    document.getElementById('gameRoomId').value = id;
-    try {
-      await connectHub();
-      await invokeHub('JoinRoom', id);
-    } catch (err) {
-      logGameEvent('auto-join(랭킹전 매칭) 실패', { message: String(err) });
-    }
-  }
+document.getElementById('btnMatchmakingCancel').addEventListener('click', async () => {
+  const playerCount = document.getElementById('matchmakingPlayerCount').value;
+  const result = await api(`/matchmaking/${playerCount}/ranked`, 'DELETE');
+  log(`DELETE /matchmaking/${playerCount}/ranked`, result);
+});
+
+document.getElementById('btnMatchmakingStatus').addEventListener('click', async () => {
+  const playerCount = document.getElementById('matchmakingPlayerCount').value;
+  const result = await api(`/matchmaking/${playerCount}/status`, 'GET');
+  log(`GET /matchmaking/${playerCount}/status`, result);
+  refreshRooms();
 });
 
 function renderLeaderboard(entries, myRank) {
