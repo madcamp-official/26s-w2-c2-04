@@ -33,6 +33,8 @@ var redisConnectionString = builder.Configuration.GetConnectionString("Redis")!;
 builder.Services.AddSingleton<IConnectionMultiplexer>(
     ConnectionMultiplexer.Connect(redisConnectionString));
 builder.Services.AddSingleton<GameStateStore>();
+builder.Services.AddSingleton<MatchmakingQueueStore>();
+builder.Services.AddHostedService<MatchmakingWorker>();
 
 builder.Services
     .AddSignalR()
