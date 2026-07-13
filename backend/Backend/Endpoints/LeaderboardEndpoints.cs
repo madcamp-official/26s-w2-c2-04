@@ -80,7 +80,7 @@ public static class LeaderboardEndpoints
             .WithName("SearchLeaderboard");
     }
 
-    private static async Task<int> ComputeRankAsync(AppDbContext db, int playerCount, int mmr, int gamesPlayed, int id) =>
+    internal static async Task<int> ComputeRankAsync(AppDbContext db, int playerCount, int mmr, int gamesPlayed, int id) =>
         1 + await db.PlayerRankings.CountAsync(pr =>
             pr.PlayerCount == playerCount &&
             (pr.Mmr > mmr

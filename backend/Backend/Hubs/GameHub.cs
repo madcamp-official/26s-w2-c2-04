@@ -11,8 +11,42 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Hubs;
 
 [Authorize]
-public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
+public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore presence) : Hub
 {
+    public override async Task OnConnectedAsync()
+    {
+        var userId = Context.User!.GetUserId();
+        if (await presence.ConnectAsync(userId))
+            await BroadcastPresenceAsync(userId, online: true);
+
+        await base.OnConnectedAsync();
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var userId = Context.User!.GetUserId();
+
+        var roomIds = await db.RoomPlayers
+            .Where(p => p.UserId == userId)
+            .Select(p => p.RoomId)
+            .ToListAsync();
+        foreach (var roomId in roomIds)
+            await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
+
+        if (await presence.DisconnectAsync(userId))
+            await BroadcastPresenceAsync(userId, online: false);
+
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    private async Task BroadcastPresenceAsync(int userId, bool online)
+    {
+        var friendIds = await Endpoints.FriendEndpoints.GetFriendIdsAsync(db, userId);
+        if (friendIds.Count > 0)
+            await Clients.Users(friendIds.Select(id => id.ToString()).ToList())
+                .SendAsync("FriendPresenceChanged", new { userId, online });
+    }
+
     public async Task JoinRoom(int roomId)
     {
         var userId = Context.User!.GetUserId();
@@ -26,7 +60,8 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
         if (state is not null)
             await Clients.Caller.SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
 
-        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerJoined", new { userId });
+        var nickname = await db.Users.Where(u => u.Id == userId).Select(u => u.Nickname).FirstAsync();
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerJoined", new { userId, nickname });
     }
 
     public async Task LeaveRoom(int roomId)
