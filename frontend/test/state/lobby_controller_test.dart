@@ -53,7 +53,15 @@ class _FakeRoomService implements RoomService {
   Future<void> deleteRoom(int roomId) async {}
 
   @override
-  Future<GameRoom> rankedMatch(int playerCount) async => _room(500);
+  Future<GameRoom> rankedMatch(
+    int playerCount, {
+    Duration pollInterval = const Duration(seconds: 2),
+    bool Function()? isCancelled,
+  }) async =>
+      _room(500);
+
+  @override
+  Future<void> cancelRankedMatch(int playerCount) async {}
 }
 
 void main() {

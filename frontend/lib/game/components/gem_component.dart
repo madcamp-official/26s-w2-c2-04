@@ -12,8 +12,9 @@ class GemTokenComponent extends PositionComponent with TapCallbacks {
   final Sprite sprite;
   final void Function(String gem) onTap;
 
-  bool _selected;
+  int _selectedCount;
   RectangleComponent? _selectionRing;
+  TextComponent? _selectedBadge;
 
   GemTokenComponent({
     required this.gem,
@@ -22,52 +23,74 @@ class GemTokenComponent extends PositionComponent with TapCallbacks {
     required this.onTap,
     required Vector2 position,
     required Vector2 size,
-    bool selected = false,
+    int selectedCount = 0,
     super.priority,
-  })  : _selected = selected,
+  })  : _selectedCount = selectedCount,
         super(position: position, size: size, anchor: Anchor.topLeft);
+
+  /// 아이콘은 정사각형으로 그리고(가로폭 기준), 그 아래 남는 세로 공간에
+  /// 개수 숫자를 별도 줄로 둡니다 — 이전에는 숫자가 아이콘 정사각형 안쪽
+  /// 하단에 겹쳐 그려져서 코인 그림과 뒤섞여 보였습니다.
+  double get _iconSize => size.x;
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
     _selectionRing = RectangleComponent(
-      size: size,
+      size: Vector2.all(_iconSize),
       paint: Paint()
-        ..color = _selected ? const Color(0xFFD2AE55) : const Color(0x00000000)
+        ..color = _selectedCount > 0 ? const Color(0xFFD2AE55) : const Color(0x00000000)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3,
     );
     add(_selectionRing!);
 
-    final inset = size.x * 0.12;
+    final inset = _iconSize * 0.12;
     add(SpriteComponent(
       sprite: sprite,
       position: Vector2.all(inset),
-      size: size - Vector2.all(inset * 2),
+      size: Vector2.all(_iconSize - inset * 2),
       anchor: Anchor.topLeft,
     ));
 
     add(
       TextComponent(
         text: '$count',
-        position: Vector2(size.x / 2, size.y - 4),
-        anchor: Anchor.bottomCenter,
+        position: Vector2(_iconSize / 2, _iconSize + 2),
+        anchor: Anchor.topCenter,
         textRenderer: TextPaint(
           style: const TextStyle(
             color: Color(0xFFF6E6BD),
-            fontSize: 15,
+            fontSize: 14,
             fontWeight: FontWeight.bold,
           ),
         ),
       ),
     );
+
+    // 동일 색 2개를 선택했을 때(요구사항: 같은 토큰을 두 번 눌러 2개 선택)
+    // 몇 개를 고른 상태인지 한눈에 보이도록 아이콘 우상단에 "×2" 배지를 둡니다.
+    _selectedBadge = TextComponent(
+      text: _selectedCount == 2 ? '×2' : '',
+      position: Vector2(_iconSize - 2, 2),
+      anchor: Anchor.topRight,
+      textRenderer: TextPaint(
+        style: const TextStyle(
+          color: Color(0xFFD2AE55),
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    add(_selectedBadge!);
   }
 
-  void setSelected(bool selected) {
-    _selected = selected;
+  void setSelected(int selectedCount) {
+    _selectedCount = selectedCount;
     _selectionRing?.paint.color =
-        selected ? const Color(0xFFD2AE55) : const Color(0x00000000);
+        selectedCount > 0 ? const Color(0xFFD2AE55) : const Color(0x00000000);
+    _selectedBadge?.text = selectedCount == 2 ? '×2' : '';
   }
 
   @override

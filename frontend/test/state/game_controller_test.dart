@@ -29,6 +29,9 @@ class _FakeGameSocket implements GameSocket {
   Future<void> leaveRoom(int roomId) async => calls.add('leaveRoom');
 
   @override
+  Future<void> disconnect() async => calls.add('disconnect');
+
+  @override
   Future<void> takeTokens(List<String> gems) async => calls.add('takeTokens');
 
   @override
@@ -201,6 +204,43 @@ void main() {
     await controller.leaveRoom();
 
     expect(socket.calls, contains('leaveRoom'));
+    // 방을 나갈 때 연결도 명시적으로 끊어(disconnect) 재사용 가능한 상태로
+    // 되돌려야, 이후 다른 방에 다시 connect()해도 "이미 연결됨" 가드에
+    // 걸리지 않는다.
+    expect(socket.calls, contains('disconnect'));
     expect(controller.state, isA<GameDisconnected>());
+  });
+
+  test(
+      'connect()가 같은 방으로 다시 호출되면(예: 최소화 배지 복귀) 소켓에 재연결하지 않는다',
+      () async {
+    await controller.connect(roomId: 5566, accessToken: 'token');
+    socket.emit(GameHubEvent.stateSync(state: _fullState(), sequence: 1));
+    await Future<void>.delayed(Duration.zero);
+    expect(socket.calls.where((c) => c == 'connect(5566)'), hasLength(1));
+
+    // PlayScreen이 배지로 최소화됐다가 복귀하며 initState()가 다시 connect()를
+    // 부르는 상황을 재현한다. 예전(autoDispose)에는 여기서 위젯이 재생성한
+    // 새 GameController+SocketService가 다시 연결을 맺어야 했지만, 이제는
+    // 같은 컨트롤러가 살아있으므로 이 두 번째 connect() 호출은 아무 것도
+    // 하지 않고 기존 연결/상태를 그대로 유지해야 한다.
+    await controller.connect(
+      roomId: 5566,
+      accessToken: 'token',
+      initialPlayers: const [],
+    );
+
+    expect(socket.calls.where((c) => c == 'connect(5566)'), hasLength(1));
+    expect(controller.state, isA<GameConnected>());
+  });
+
+  test('connect()가 다른 방으로 호출되면 정상적으로 재연결한다', () async {
+    await controller.connect(roomId: 5566, accessToken: 'token');
+    socket.emit(GameHubEvent.stateSync(state: _fullState(), sequence: 1));
+    await Future<void>.delayed(Duration.zero);
+
+    await controller.connect(roomId: 7788, accessToken: 'token');
+
+    expect(socket.calls, contains('connect(7788)'));
   });
 }

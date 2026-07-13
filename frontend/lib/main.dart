@@ -4,19 +4,26 @@ import 'screens/login.dart';
 import 'screens/signup.dart';
 import 'screens/home.dart';
 import 'screens/leaderboard.dart';
+import 'state/active_room_controller.dart';
 import 'state/auth_controller.dart';
 import 'theme/app_theme.dart';
+import 'widgets/minimized_room_badge.dart';
+
+/// MaterialApp.builder는 실제 Navigator 바깥(위)에서 실행되므로, 배지에서
+/// 화면을 미는(push) 데 필요한 NavigatorState를 여기 전역 키로 들고 있는다.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   runApp(const ProviderScope(child: MyApp()));
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: 'Splendor Multiplayer',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
@@ -26,6 +33,16 @@ class MyApp extends StatelessWidget {
         '/signup': (context) => const SignUpScreen(),
         '/home': (context) => const HomeScreen(),
         '/leaderboard': (context) => const LeaderboardScreen(),
+      },
+      builder: (context, child) {
+        final activeRoom = ref.watch(activeRoomProvider);
+        return Stack(
+          children: [
+            if (child != null) child,
+            if (activeRoom != null)
+              MinimizedRoomBadge(room: activeRoom, navigatorKey: rootNavigatorKey),
+          ],
+        );
       },
     );
   }

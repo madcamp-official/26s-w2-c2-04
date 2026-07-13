@@ -42,7 +42,10 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
   Future<void> _startMatching() async {
     final started = DateTime.now();
     try {
-      final room = await ref.read(roomServiceProvider).rankedMatch(widget.players);
+      final room = await ref.read(roomServiceProvider).rankedMatch(
+            widget.players,
+            isCancelled: () => _cancelled,
+          );
       final elapsed = DateTime.now().difference(started);
       if (elapsed < _minimumDisplay) {
         await Future.delayed(_minimumDisplay - elapsed);
@@ -53,8 +56,26 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
       );
     } catch (e) {
       if (!mounted || _cancelled) return;
+      // 매칭이 실패했는데도 경과 시간 타이머/스피너가 계속 돌면 "아직 찾는 중"
+      // 처럼 보인다 — 실패를 보여줄 때는 반드시 멈춘다.
+      _elapsedTimer?.cancel();
+      _spinController.stop();
       setState(() => _error = '$e');
     }
+  }
+
+  Future<void> _cancelSearch() async {
+    _cancelled = true;
+    _elapsedTimer?.cancel();
+    _spinController.stop();
+    try {
+      // 화면을 벗어나는 것 자체는 이 요청 성패와 무관하게 항상 허용한다 —
+      // 대기열 정리는 베스트 에포트.
+      await ref.read(roomServiceProvider).cancelRankedMatch(widget.players);
+    } catch (_) {
+      // 무시: 애초에 대기열에 없었거나(이미 매칭/오류) 네트워크 문제일 수 있음.
+    }
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -118,7 +139,7 @@ class _MatchmakingScreenState extends ConsumerState<MatchmakingScreen>
                 ),
                 const SizedBox(height: 32),
                 OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: _cancelSearch,
                   child: const Text('CANCEL SEARCH'),
                 ),
               ],

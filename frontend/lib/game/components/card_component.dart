@@ -8,12 +8,21 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flutter/painting.dart' show TextStyle, FontWeight;
 import '../../models/card.dart';
+import 'cost_pips.dart';
 
 class CardComponent extends PositionComponent with TapCallbacks {
   final SplendorCard card;
   final bool reserved;
   final bool affordable;
   final Sprite sprite;
+
+  /// 카드 인쇄 원가(card.cost)에서 내 보너스(구매한 카드 할인)를 뺀, 실제로
+  /// 더 내야 하는 색상별 개수. null이면(관전 등 "나"를 특정할 수 없는 경우)
+  /// 오버레이를 그리지 않고 인쇄된 원가만 보여줍니다. BoardComponent가 매
+  /// StateSync마다 보드를 통째로 다시 그리므로, 내가 카드를 살 때마다 이 값도
+  /// 새로 계산돼 전달되어 오버레이가 항상 최신 상태를 반영합니다.
+  final Map<String, int>? remainingCost;
+
   final void Function(SplendorCard card, bool reserved) onTap;
 
   bool _selected;
@@ -27,6 +36,7 @@ class CardComponent extends PositionComponent with TapCallbacks {
     required this.onTap,
     required Vector2 position,
     required Vector2 size,
+    this.remainingCost,
     bool selected = false,
     super.priority,
   })  : _selected = selected,
@@ -58,6 +68,11 @@ class CardComponent extends PositionComponent with TapCallbacks {
         ),
       ),
     );
+
+    final remaining = remainingCost;
+    if (remaining != null) {
+      addCostPipRow(this, amounts: remaining, componentSize: size);
+    }
 
     _selectionBorder = RectangleComponent(
       size: size,

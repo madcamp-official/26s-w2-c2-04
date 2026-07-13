@@ -74,17 +74,49 @@ class RoomService {
     ApiClient.ensureOk(res, '방 삭제에 실패했습니다.');
   }
 
-  /// 랭크 매칭. 호출 즉시 대기 중인 랭크 방에 참가하거나 새로 만들어 응답합니다
-  /// (폴링용 대기열이 아니라 동기 응답). 정원이 그 자리에서 다 차면 응답의
-  /// status가 이미 PLAYING일 수 있습니다.
+  /// 랭크 매칭. POST /matchmaking/{playerCount}/ranked는 대기열에 넣을 뿐
+  /// 즉시 방을 돌려주지 않습니다(MatchmakingDtos.MatchmakingStatusResponse,
+  /// Status: QUEUED/MATCHED/NOT_QUEUED) — 실제 매칭은 MatchmakingWorker가
+  /// 2초 주기 백그라운드 틱으로 처리하므로, 성사될 때까지
+  /// GET /matchmaking/{playerCount}/status를 폴링해야 합니다. MATCHED가 되면
+  /// roomId가 채워지고, 그 방을 GET /rooms/{roomId}로 조회해 돌려줍니다.
   ///
-  /// 이 계약은 아직 팀 내에서 확정되지 않았습니다(백엔드가 매칭을 서버 주도로
-  /// 처리해 바로 게임으로 넘기는 방식으로 바뀔 수 있음). 계약이 바뀌면 이 메서드의
-  /// 반환 타입/파싱만 맞춰 수정하면 되고, 호출부(matchmaking.dart)는 roomId만
-  /// 사용하므로 영향이 크지 않습니다.
-  Future<GameRoom> rankedMatch(int playerCount) async {
-    final res = await _client.post('/matchmaking/$playerCount/ranked');
-    ApiClient.ensureOk(res, '랭크 매칭에 실패했습니다.');
-    return GameRoom.fromJson(jsonDecode(res.body));
+  /// [isCancelled]가 true를 반환하면(매칭 화면에서 취소) 폴링을 멈추고 실패로
+  /// 끝냅니다 — 대기열 이탈 자체는 [cancelRankedMatch]로 별도 호출해야 합니다.
+  Future<GameRoom> rankedMatch(
+    int playerCount, {
+    Duration pollInterval = const Duration(seconds: 2),
+    bool Function()? isCancelled,
+  }) async {
+    final enqueueRes = await _client.post('/matchmaking/$playerCount/ranked');
+    ApiClient.ensureOk(enqueueRes, '랭크 매칭에 실패했습니다.');
+
+    while (true) {
+      if (isCancelled?.call() ?? false) {
+        throw StateError('랭크 매칭이 취소되었습니다.');
+      }
+
+      final statusRes = await _client.get('/matchmaking/$playerCount/status');
+      ApiClient.ensureOk(statusRes, '랭크 매칭 상태를 확인하지 못했습니다.');
+      final status = jsonDecode(statusRes.body) as Map<String, dynamic>;
+
+      switch (status['status']) {
+        case 'MATCHED':
+          final roomId = (status['roomId'] as num).toInt();
+          return getRoom(roomId);
+        case 'QUEUED':
+          await Future.delayed(pollInterval);
+          continue;
+        default:
+          // NOT_QUEUED: TTL 만료 등으로 대기열에서 예기치 않게 빠진 경우.
+          throw StateError('랭크 매칭 대기열에서 이탈했습니다. 다시 시도해주세요.');
+      }
+    }
+  }
+
+  /// 랭크 매칭 대기열에서 스스로 빠집니다(매칭 화면 취소 버튼).
+  Future<void> cancelRankedMatch(int playerCount) async {
+    final res = await _client.delete('/matchmaking/$playerCount/ranked');
+    ApiClient.ensureOk(res, '랭크 매칭 취소에 실패했습니다.');
   }
 }

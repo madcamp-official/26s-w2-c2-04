@@ -7,11 +7,20 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flutter/painting.dart' show TextStyle, FontWeight;
 import '../../models/noble.dart';
+import 'cost_pips.dart';
 
 class NobleComponent extends PositionComponent with TapCallbacks {
   final Noble noble;
   final Sprite sprite;
   final bool selectable;
+
+  /// 귀족 요구조건(noble.requirement)에서 내 보너스를 뺀, 아직 더 모아야 하는
+  /// 색상별 개수(귀족은 카드 비용과 달리 할인 없이 보너스 개수를 그대로 요구
+  /// 조건과 비교합니다). null이면(관전 등) 오버레이 없이 원래 요구조건만
+  /// 보여줍니다. 카드 컴포넌트와 마찬가지로 BoardComponent가 매 StateSync마다
+  /// 다시 계산해 넘기므로 항상 최신 상태를 반영합니다.
+  final Map<String, int>? remainingRequirement;
+
   final void Function(Noble noble)? onTap;
 
   NobleComponent({
@@ -20,6 +29,7 @@ class NobleComponent extends PositionComponent with TapCallbacks {
     required Vector2 position,
     required Vector2 size,
     this.selectable = false,
+    this.remainingRequirement,
     this.onTap,
     super.priority,
   }) : super(position: position, size: size, anchor: Anchor.topLeft);
@@ -53,6 +63,11 @@ class NobleComponent extends PositionComponent with TapCallbacks {
         ),
       ),
     );
+
+    final remaining = remainingRequirement;
+    if (remaining != null) {
+      addCostPipRow(this, amounts: remaining, componentSize: size, pipDiameter: 11);
+    }
   }
 
   @override

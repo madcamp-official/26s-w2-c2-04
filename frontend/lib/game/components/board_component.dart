@@ -50,14 +50,36 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
       tierRows[tier.tier] = tier.visibleCards;
     }
 
-    final cardW = size.x * 0.085;
+    // 카드 폭을 기준으로 간격/귀족/토큰 크기를 모두 비례 산출한 뒤, 실제로 쓰이는
+    // 콘텐츠 전체의 가로/세로 크기(contentWidth/contentHeight)를 구해서 "보드
+    // 크기 - 콘텐츠 크기"의 남는 공간을 좌우/상하에 똑같이 나눠 마진으로 씁니다.
+    // (예전에는 leftMargin=size.x*0.04, topMargin=size.y*0.06처럼 고정 비율이라
+    // 실제 콘텐츠가 보드의 절반 정도만 채우고 오른쪽/아래쪽에 쓰이지 않는 공간이
+    // 훨씬 크게 남았습니다.)
+    final cardW = size.x * 0.105;
     final cardH = cardW * 1.4;
-    final gap = size.x * 0.012;
-    final leftMargin = size.x * 0.04;
+    final gap = cardW * 0.14;
+    final sectionGap = gap * 2; // 티어 카드 줄과 예약 카드 칸 사이 구획 간격
+    final nobleSize = Vector2.all(cardW * 0.75);
+    final tokenIconSize = cardW * 0.55;
+    final tokenLabelHeight = tokenIconSize * 0.4; // 아이콘 밑에 개수를 표시할 공간
+    final tokenSize = Vector2(tokenIconSize, tokenIconSize + tokenLabelHeight);
+
+    // 가로: [덱 뒷면] + 공개 카드 4장(티어 줄) + 구획 간격 + 예약 카드 1칸.
+    final contentWidth = 5 * cardW + 4 * gap + sectionGap + cardW;
+    // 세로: 귀족 줄 + 티어 3줄 + 토큰 줄, 줄 사이 4번의 간격.
+    final contentHeight = nobleSize.y + 3 * cardH + tokenSize.y + 4 * gap;
+
+    final double leftMargin =
+        ((size.x - contentWidth) / 2).clamp(0.0, size.x).toDouble();
+    final double topMargin =
+        ((size.y - contentHeight) / 2).clamp(0.0, size.y).toDouble();
+
+    final nobleY = topMargin;
     final tierRowY = {
-      3: size.y * 0.06,
-      2: size.y * 0.06 + (cardH + gap),
-      1: size.y * 0.06 + 2 * (cardH + gap),
+      3: topMargin + nobleSize.y + gap,
+      2: topMargin + nobleSize.y + gap + (cardH + gap),
+      1: topMargin + nobleSize.y + gap + 2 * (cardH + gap),
     };
 
     final newCards = <CardComponent>[];
@@ -91,13 +113,14 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
           onTap: onCardTap,
           position: Vector2(leftMargin + (cardW + gap) * (i + 1), y),
           size: Vector2(cardW, cardH),
+          remainingCost: _remainingCostFor(card, me),
         ));
       }
     }
 
     // 내 예약 카드 줄(있으면 화면 오른쪽에 세로로 표시)
     if (me != null) {
-      final reservedX = leftMargin + (cardW + gap) * 5 + gap * 3;
+      final reservedX = leftMargin + 5 * cardW + 4 * gap + sectionGap;
       for (var i = 0; i < me.reservedCards.length; i++) {
         final card = me.reservedCards[i];
         final imagePath = GameAssets.cardFace(card.id) ?? GameAssets.cardBack(card.tier);
@@ -112,13 +135,12 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
           onTap: onCardTap,
           position: Vector2(reservedX, tierRowY[3]! + (cardH + gap) * i),
           size: Vector2(cardW, cardH),
+          remainingCost: _remainingCostFor(card, me),
         ));
       }
     }
 
     // 귀족 줄
-    final nobleSize = Vector2.all(cardW * 0.75);
-    final nobleY = size.y * 0.01;
     final newNobles = <NobleComponent>[];
     for (var i = 0; i < state.boardNobles.length; i++) {
       final noble = state.boardNobles[i];
@@ -130,13 +152,13 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
         position: Vector2(leftMargin + (nobleSize.x + gap) * i, nobleY),
         size: nobleSize,
         selectable: nobleChoiceIds.contains(noble.id),
+        remainingRequirement: _remainingRequirementFor(noble, me),
         onTap: onNobleTap,
       ));
     }
 
     // 토큰 풀(보드에 남은 보석 은행)
-    final tokenSize = Vector2.all(cardW * 0.55);
-    final tokenY = tierRowY[1]! + cardH + gap * 3;
+    final tokenY = tierRowY[1]! + cardH + gap;
     final newGems = <GemTokenComponent>[];
     for (var i = 0; i < Gem.values.length; i++) {
       final gem = Gem.values[i];
@@ -193,7 +215,32 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
       c.setSelected(selection.card != null && selection.card!.id == c.card.id);
     }
     for (final g in _gemComponents) {
-      g.setSelected(selection.gems.contains(g.gem));
+      g.setSelected(selection.gems[g.gem] ?? 0);
     }
   }
+}
+
+/// 카드 인쇄 원가에서 [me]의 보너스(구매한 카드 할인)를 뺀, 실제로 더 내야
+/// 하는 색상별 개수(logic/game_rules.dart의 goldNeededFor와 같은 규칙). [me]가
+/// 없으면(관전 등 "나"를 특정할 수 없는 경우) null을 돌려줘 CardComponent가
+/// 오버레이 없이 원본 원가만 보여주게 합니다.
+Map<String, int>? _remainingCostFor(SplendorCard card, GamePlayerState? me) {
+  if (me == null) return null;
+  return {
+    for (final entry in card.cost.entries)
+      entry.key:
+          (entry.value - (me.bonuses[entry.key] ?? 0)).clamp(0, entry.value),
+  };
+}
+
+/// 귀족 요구조건에서 [me]의 보너스를 뺀, 아직 더 모아야 하는 색상별 개수.
+/// 카드 비용과 달리 귀족은 할인 개념이 없어 보너스 개수를 그대로 요구조건과
+/// 비교합니다(backend GameEngine의 귀족 자동 획득 판정과 동일한 규칙).
+Map<String, int>? _remainingRequirementFor(Noble noble, GamePlayerState? me) {
+  if (me == null) return null;
+  return {
+    for (final entry in noble.requirement.entries)
+      entry.key:
+          (entry.value - (me.bonuses[entry.key] ?? 0)).clamp(0, entry.value),
+  };
 }

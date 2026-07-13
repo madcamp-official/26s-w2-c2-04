@@ -18,6 +18,20 @@ public record ReserveCardRequest(string? CardId, int? Tier);
 [Authorize]
 public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
 {
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var userId = Context.User!.GetUserId();
+
+        var roomIds = await db.RoomPlayers
+            .Where(p => p.UserId == userId)
+            .Select(p => p.RoomId)
+            .ToListAsync();
+        foreach (var roomId in roomIds)
+            await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
+
+        await base.OnDisconnectedAsync(exception);
+    }
+
     public async Task JoinRoom(int roomId)
     {
         var userId = Context.User!.GetUserId();
