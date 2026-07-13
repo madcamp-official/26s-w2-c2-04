@@ -31,14 +31,16 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
         if (state is not null)
             await Clients.Caller.SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
 
-        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerJoined", new { userId });
+        var nickname = await db.Users.Where(u => u.Id == userId).Select(u => u.Nickname).FirstAsync();
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerJoined", new { userId, nickname });
     }
 
     public async Task LeaveRoom(int roomId)
     {
         var userId = Context.User!.GetUserId();
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, GameHubMessages.GroupName(roomId));
-        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
+        var nickname = await db.Users.Where(u => u.Id == userId).Select(u => u.Nickname).FirstAsync();
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId, nickname });
     }
 
     public async Task StartGame(int roomId)

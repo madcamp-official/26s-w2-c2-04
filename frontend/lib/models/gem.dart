@@ -11,8 +11,13 @@ enum Gem {
   onyx,
   gold;
 
-  String get wireValue => name;
+  /// GameHub invoke 페이로드/GameState 맵 키에 쓰이는 표기. 백엔드 GemType enum이
+  /// PascalCase 문자열로 직렬화됩니다(naming policy 없는 JsonStringEnumConverter,
+  /// backend/Backend/Program.cs:42,98) — "diamond"가 아니라 "Diamond".
+  String get wireValue => name[0].toUpperCase() + name.substring(1);
 
-  static Gem fromWireValue(String value) =>
-      Gem.values.firstWhere((g) => g.name == value);
+  static Gem fromWireValue(String value) => Gem.values.firstWhere(
+        (g) => g.wireValue == value,
+        orElse: () => Gem.values.firstWhere((g) => g.name == value.toLowerCase()),
+      );
 }

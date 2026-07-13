@@ -112,12 +112,25 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 if (app.Environment.IsDevelopment())
 {
-    var testFrontendProvider = new PhysicalFileProvider(
-        Path.Combine(builder.Environment.ContentRootPath, "testFrontend"));
+    // 로컬/도커 연동 테스트는 마이그레이션을 수동으로 돌리지 않아도 되게
+    // 시작 시 자동으로 최신 스키마로 맞춥니다.
+    using var scope = app.Services.CreateScope();
+    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+}
+
+var testFrontendPath = Path.Combine(builder.Environment.ContentRootPath, "testFrontend");
+if (app.Environment.IsDevelopment() && Directory.Exists(testFrontendPath))
+{
+    // testFrontend/는 dotnet publish 결과물에 포함되지 않는 수동 테스트용 정적
+    // 페이지라, 컨테이너 이미지처럼 없는 환경에서는 조용히 건너뜁니다.
+    var testFrontendProvider = new PhysicalFileProvider(testFrontendPath);
     app.UseDefaultFiles(new DefaultFilesOptions
     {
         FileProvider = testFrontendProvider,

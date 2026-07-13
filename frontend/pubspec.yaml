@@ -49,6 +49,6 @@ flutter:
   # Flutter는 여러 이유로, 프로젝트 폴더에 파일이 있따고 자동으로 앱에 포함시키지 X
   # 앱에 패키징할 파일을 assets항목에 명시적으로 적어줘야
   assets:
-    - assets/images/cards/
-    - assets/images/gems/
-    - assets/images/board/
+    - assets/image/cards/
+    - assets/image/nobles/
+    - assets/image/tokens/

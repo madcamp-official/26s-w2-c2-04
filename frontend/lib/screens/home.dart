@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/auth_controller.dart';
@@ -7,6 +9,48 @@ import 'leaderboard.dart';
 import 'profile.dart';
 import 'settings.dart';
 import 'setup.dart';
+
+/// setup.dart를 전체 화면 전환 대신, 배경을 블러 처리한 채 중앙에 작은 팝업으로 띄웁니다.
+void _openSetupPopup(BuildContext context) {
+  showGeneralDialog(
+    context: context,
+    barrierLabel: 'Setup',
+    barrierColor: Colors.black.withValues(alpha: 0.45),
+    barrierDismissible: true,
+    transitionDuration: const Duration(milliseconds: 220),
+    pageBuilder: (context, animation, secondaryAnimation) {
+      final size = MediaQuery.sizeOf(context);
+      return Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: size.width < 520 ? size.width * 0.92 : 480,
+            maxHeight: size.height * 0.85,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: const SetupScreen(),
+          ),
+        ),
+      );
+    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      return BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: 8 * curved.value,
+          sigmaY: 8 * curved.value,
+        ),
+        child: FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween(begin: 0.92, end: 1.0).animate(curved),
+            child: child,
+          ),
+        ),
+      );
+    },
+  );
+}
 
 /// 로그인 이후 첫 화면. Main page design/App.tsx의 기본 레이아웃(SPLENDOR 타이틀 +
 /// MULTIPLAYER/LEADERBOARD 버튼 + 우하단 Profile/Friends/Settings 유틸리티 버튼)에
@@ -79,9 +123,7 @@ class HomeScreen extends ConsumerWidget {
                             title: 'MULTIPLAYER',
                             subtitle: 'ENTER THE MARKET',
                             filled: true,
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const SetupScreen()),
-                            ),
+                            onTap: () => _openSetupPopup(context),
                           ),
                           _HomeActionCard(
                             icon: Icons.emoji_events_outlined,

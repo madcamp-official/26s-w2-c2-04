@@ -1,18 +1,21 @@
+import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../game/board_selection.dart';
+import '../game/logic/game_rules.dart';
+import '../game/splendor_game.dart';
 import '../models/card.dart';
 import '../models/game_hub_event.dart';
 import '../models/game_state.dart';
 import '../models/gameroom.dart';
-import '../models/gem.dart';
 import '../state/auth_controller.dart';
 import '../state/game_controller.dart';
 import '../state/lobby_controller.dart';
 import '../theme/app_theme.dart';
 
 /// 방 대기실 + 실제 게임 진행 화면.
-/// GameHub 연결 전(WAITING)에는 대기실 UI를, 연결 후(PLAYING)에는 보드/토큰/
-/// 카드/귀족/채팅 등 실시간 게임 UI를 보여줍니다.
+/// GameHub 연결 전(WAITING)에는 대기실 UI를, 연결 후(PLAYING)에는 Flame으로 그린
+/// 보드(카드/귀족/토큰) + 액션 바 + 플레이어 목록 + 채팅을 보여줍니다.
 class PlayScreen extends ConsumerStatefulWidget {
   final GameRoom room;
 
@@ -38,7 +41,12 @@ class PlayScreen extends ConsumerStatefulWidget {
 
 class _PlayScreenState extends ConsumerState<PlayScreen> {
   final _chatController = TextEditingController();
-  final Set<Gem> _selectedGems = {};
+  late final SplendorGame _splendorGame;
+
+  int get _myUserId {
+    final auth = ref.read(authControllerProvider);
+    return auth is AuthAuthenticated ? auth.user.userId : 0;
+  }
 
   bool get _isHost {
     final auth = ref.read(authControllerProvider);
@@ -48,6 +56,12 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   @override
   void initState() {
     super.initState();
+    _splendorGame = SplendorGame(
+      myUserId: _myUserId,
+      onClaimNoble: (nobleId) =>
+          ref.read(gameControllerProvider.notifier).claimNoble(nobleId),
+    );
+
     if (widget.autoConnect) {
       Future.microtask(() {
         final auth = ref.read(authControllerProvider);
@@ -79,22 +93,8 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     }
   }
 
-  void _toggleGem(Gem gem) {
-    setState(() {
-      if (_selectedGems.contains(gem)) {
-        _selectedGems.remove(gem);
-      } else if (_selectedGems.length < 3) {
-        _selectedGems.add(gem);
-      }
-    });
-  }
-
-  Future<void> _confirmTakeTokens() async {
-    if (_selectedGems.isEmpty) return;
-    await ref
-        .read(gameControllerProvider.notifier)
-        .takeTokens(_selectedGems.map((g) => g.wireValue).toList());
-    setState(() => _selectedGems.clear());
+  Future<void> _takeTokens(List<String> gems) {
+    return ref.read(gameControllerProvider.notifier).takeTokens(gems);
   }
 
   Future<void> _purchase(SplendorCard card, {required bool reserved}) {
@@ -154,14 +154,14 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       body: switch (gameState) {
         GameConnecting() => const Center(child: CircularProgressIndicator()),
         GameError(:final message) => Center(child: Text('연결 실패: $message')),
-        GameConnected(:final gameState) => _GameBoard(
+        GameConnected(:final gameState, :final pendingNobleChoice) => _GameBoard(
             room: widget.room,
             gameState: gameState,
-            selectedGems: _selectedGems,
-            onToggleGem: _toggleGem,
-            onConfirmTakeTokens: _confirmTakeTokens,
+            pendingNobleChoice: pendingNobleChoice,
+            game: _splendorGame,
             onPurchase: _purchase,
             onReserve: _reserve,
+            onTakeTokens: _takeTokens,
             chatController: _chatController,
             onSendChat: _sendChat,
           ),
@@ -341,36 +341,81 @@ class _PlayerSlot extends StatelessWidget {
   }
 }
 
-class _GameBoard extends StatelessWidget {
+/// Flame 보드 + 액션 바 + 플레이어 목록 + 채팅. gameState/pendingNobleChoice가
+/// 바뀔 때마다(didUpdateWidget) SplendorGame에 새 상태를 밀어넣습니다.
+class _GameBoard extends StatefulWidget {
   final GameRoom room;
   final GameState gameState;
-  final Set<Gem> selectedGems;
-  final ValueChanged<Gem> onToggleGem;
-  final VoidCallback onConfirmTakeTokens;
-  final Future<void> Function(SplendorCard card, {required bool reserved})
-      onPurchase;
+  final List<String>? pendingNobleChoice;
+  final SplendorGame game;
+  final Future<void> Function(SplendorCard card, {required bool reserved}) onPurchase;
   final Future<void> Function(SplendorCard card) onReserve;
+  final Future<void> Function(List<String> gems) onTakeTokens;
   final TextEditingController chatController;
   final VoidCallback onSendChat;
 
   const _GameBoard({
     required this.room,
     required this.gameState,
-    required this.selectedGems,
-    required this.onToggleGem,
-    required this.onConfirmTakeTokens,
+    required this.pendingNobleChoice,
+    required this.game,
     required this.onPurchase,
     required this.onReserve,
+    required this.onTakeTokens,
     required this.chatController,
     required this.onSendChat,
   });
 
+  @override
+  State<_GameBoard> createState() => _GameBoardState();
+}
+
+class _GameBoardState extends State<_GameBoard> {
+  @override
+  void initState() {
+    super.initState();
+    _pushStateToGame();
+  }
+
+  @override
+  void didUpdateWidget(covariant _GameBoard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.gameState.sequence != widget.gameState.sequence ||
+        oldWidget.pendingNobleChoice != widget.pendingNobleChoice) {
+      _pushStateToGame();
+    }
+  }
+
+  void _pushStateToGame() {
+    widget.game.updateGameState(
+      widget.gameState,
+      nobleChoiceIds: widget.pendingNobleChoice ?? const [],
+    );
+  }
+
   /// 백엔드 GameState.PlayerState에는 닉네임이 없어서 방 참가자 목록에서 조회합니다.
   String _nicknameFor(int userId) {
-    for (final p in room.players) {
+    for (final p in widget.room.players) {
       if (p.id == userId) return p.nickname;
     }
     return 'User $userId';
+  }
+
+  Future<void> _confirm(BoardSelection selection) async {
+    if (selection.card != null) {
+      await widget.onPurchase(selection.card!, reserved: selection.cardIsReserved);
+    } else if (selection.gems.isNotEmpty) {
+      await widget.onTakeTokens(selection.gems.toList());
+    } else {
+      return;
+    }
+    widget.game.clearSelection();
+  }
+
+  Future<void> _reserveSelected(BoardSelection selection) async {
+    if (selection.card == null) return;
+    await widget.onReserve(selection.card!);
+    widget.game.clearSelection();
   }
 
   @override
@@ -380,46 +425,38 @@ class _GameBoard extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.all(8),
           child: Text(
-            '턴 ${gameState.turnNumber} · 현재 차례: ${gameState.currentPlayerId != null ? _nicknameFor(gameState.currentPlayerId!) : '-'}',
+            '턴 ${widget.gameState.turnNumber} · 현재 차례: '
+            '${widget.gameState.currentPlayerId != null ? _nicknameFor(widget.gameState.currentPlayerId!) : '-'}',
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
-        _TokenPool(
-          tokens: gameState.tokenBank,
-          selectedGems: selectedGems,
-          onToggleGem: onToggleGem,
-          onConfirm: onConfirmTakeTokens,
+        Expanded(
+          flex: 3,
+          child: ClipRect(child: GameWidget(game: widget.game)),
+        ),
+        ValueListenableBuilder<BoardSelection>(
+          valueListenable: widget.game.selection,
+          builder: (context, selection, _) => _ActionBar(
+            selection: selection,
+            tokenBank: widget.gameState.tokenBank,
+            onConfirm: () => _confirm(selection),
+            onReserve:
+                selection.card == null || selection.cardIsReserved
+                    ? null
+                    : () => _reserveSelected(selection),
+            onCancel: widget.game.clearSelection,
+          ),
         ),
         Expanded(
+          flex: 2,
           child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             children: [
-              for (final tier in gameState.boardTiers.reversed)
-                _BoardTierRow(
-                  tier: tier,
-                  onPurchase: (card) => onPurchase(card, reserved: false),
-                  onReserve: onReserve,
-                ),
-              const Divider(),
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: Text('귀족', style: Theme.of(context).textTheme.titleSmall),
-              ),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final noble in gameState.boardNobles)
-                    Chip(label: Text('${noble.id} (+${noble.points})')),
-                ],
-              ),
-              const Divider(),
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: Text('플레이어', style: Theme.of(context).textTheme.titleSmall),
-              ),
-              for (final player in gameState.playersInOrder)
+              Text('플레이어', style: Theme.of(context).textTheme.titleSmall),
+              for (final player in widget.gameState.playersInOrder)
                 ListTile(
-                  title: Text(
-                      '${_nicknameFor(player.userId)} · ${player.points}점'),
+                  dense: true,
+                  title: Text('${_nicknameFor(player.userId)} · ${player.points}점'),
                   subtitle: Text(
                     '토큰: ${player.tokens.entries.map((e) => '${e.key}:${e.value}').join(', ')}',
                   ),
@@ -427,113 +464,63 @@ class _GameBoard extends StatelessWidget {
             ],
           ),
         ),
-        _ChatBar(controller: chatController, onSend: onSendChat),
+        _ChatBar(controller: widget.chatController, onSend: widget.onSendChat),
       ],
     );
   }
 }
 
-class _TokenPool extends StatelessWidget {
-  final Map<String, int> tokens;
-  final Set<Gem> selectedGems;
-  final ValueChanged<Gem> onToggleGem;
+class _ActionBar extends StatelessWidget {
+  final BoardSelection selection;
+  final Map<String, int> tokenBank;
   final VoidCallback onConfirm;
+  final VoidCallback? onReserve;
+  final VoidCallback onCancel;
 
-  const _TokenPool({
-    required this.tokens,
-    required this.selectedGems,
-    required this.onToggleGem,
+  const _ActionBar({
+    required this.selection,
+    required this.tokenBank,
     required this.onConfirm,
+    required this.onReserve,
+    required this.onCancel,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (selection.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 10),
+        child: Text(
+          '카드나 토큰을 탭해서 선택하세요.',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+        ),
+      );
+    }
+
+    final isGemSelection = selection.card == null;
+    final canConfirm = isGemSelection
+        ? isValidTokenSelection(selection.gems.toList(), tokenBank)
+        : true;
+    final confirmLabel = selection.card != null
+        ? (selection.cardIsReserved ? '예약 카드 구매' : '구매')
+        : '토큰 획득 (${selection.gems.length}/3)';
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
           Expanded(
-            child: Wrap(
-              spacing: 8,
-              children: [
-                for (final gem in Gem.values.where((g) => g != Gem.gold))
-                  FilterChip(
-                    label: Text('${gem.wireValue} ${tokens[gem.wireValue] ?? 0}'),
-                    selected: selectedGems.contains(gem),
-                    onSelected: (_) => onToggleGem(gem),
-                  ),
-              ],
+            child: ElevatedButton(
+              onPressed: canConfirm ? onConfirm : null,
+              child: Text(confirmLabel),
             ),
           ),
-          ElevatedButton(
-            onPressed: selectedGems.isEmpty ? null : onConfirm,
-            child: const Text('토큰 획득'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BoardTierRow extends StatelessWidget {
-  final BoardTier tier;
-  final Future<void> Function(SplendorCard card) onPurchase;
-  final Future<void> Function(SplendorCard card) onReserve;
-
-  const _BoardTierRow({
-    required this.tier,
-    required this.onPurchase,
-    required this.onReserve,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('티어 ${tier.tier} (덱 ${tier.deckRemaining}장 남음)'),
-          SizedBox(
-            height: 120,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final card in tier.visibleCards)
-                  Card(
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('${card.bonus} +${card.points}점'),
-                          Text(
-                            card.cost.entries
-                                .map((e) => '${e.key}:${e.value}')
-                                .join(' '),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextButton(
-                                onPressed: () => onPurchase(card),
-                                child: const Text('구매'),
-                              ),
-                              TextButton(
-                                onPressed: () => onReserve(card),
-                                child: const Text('예약'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          if (onReserve != null) ...[
+            const SizedBox(width: 8),
+            OutlinedButton(onPressed: onReserve, child: const Text('예약')),
+          ],
+          const SizedBox(width: 8),
+          TextButton(onPressed: onCancel, child: const Text('취소')),
         ],
       ),
     );
