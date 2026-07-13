@@ -85,7 +85,7 @@ public static class RoomEndpoints
         })
             .WithName("GetRoom");
 
-        group.MapPost("/{roomId:int}/join", async (int roomId, JoinRoomRequest request, HttpContext http, AppDbContext db, IPasswordHasher<Room> hasher) =>
+        group.MapPost("/{roomId:int}/join", async (int roomId, JoinRoomRequest request, HttpContext http, AppDbContext db, IPasswordHasher<Room> hasher, RoomInviteStore inviteStore) =>
         {
             var userId = http.User.GetUserId();
 
@@ -113,7 +113,7 @@ public static class RoomEndpoints
             if (room.Players.Count >= room.MaxPlayers)
                 return Results.Conflict(new { code = "ROOM_FULL", message = "방 인원이 가득 찼습니다." });
 
-            if (room.IsPrivate)
+            if (room.IsPrivate && !await inviteStore.ConsumeAsync(room.Id, userId))
             {
                 var verifyResult = room.PasswordHash is not null && !string.IsNullOrEmpty(request.Password)
                     ? hasher.VerifyHashedPassword(room, room.PasswordHash, request.Password)
@@ -131,6 +131,54 @@ public static class RoomEndpoints
             return Results.Ok(response);
         })
             .WithName("JoinRoom");
+
+        group.MapPost("/{roomId:int}/invites", async (
+            int roomId, RoomInviteRequest request, HttpContext http, AppDbContext db, IHubContext<GameHub> hubContext, RoomInviteStore inviteStore) =>
+        {
+            var userId = http.User.GetUserId();
+
+            var room = await db.Rooms.Include(r => r.Players).FirstOrDefaultAsync(r => r.Id == roomId);
+            if (room is null)
+                return Results.NotFound(new { code = "ROOM_NOT_FOUND", message = "방을 찾을 수 없습니다." });
+
+            if (!room.Players.Any(p => p.UserId == userId))
+                return Results.Json(
+                    new { code = "NOT_A_MEMBER", message = "방에 있는 유저만 초대할 수 있습니다." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            if (room.Status != RoomStatus.Waiting)
+                return Results.Conflict(new { code = "ROOM_ALREADY_STARTED", message = "이미 게임이 시작된 방입니다." });
+
+            if (room.Players.Any(p => p.UserId == request.TargetUserId))
+                return Results.Conflict(new { code = "ALREADY_IN_ROOM", message = "이미 방에 있는 유저입니다." });
+
+            if (room.Players.Count >= room.MaxPlayers)
+                return Results.Conflict(new { code = "ROOM_FULL", message = "방 인원이 가득 찼습니다." });
+
+            if (!await FriendEndpoints.IsFriendAsync(db, userId, request.TargetUserId))
+                return Results.Json(
+                    new { code = "NOT_FRIENDS", message = "친구만 초대할 수 있습니다." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            if (await IsInActiveRoomAsync(db, request.TargetUserId))
+                return Results.Conflict(new { code = "TARGET_ALREADY_IN_ROOM", message = "상대가 이미 다른 방에 참가 중입니다." });
+
+            if (room.IsPrivate)
+                await inviteStore.GrantAsync(roomId, request.TargetUserId);
+
+            var inviter = await db.Users.FirstAsync(u => u.Id == userId);
+            await hubContext.Clients.User(request.TargetUserId.ToString()).SendAsync("RoomInvite", new
+            {
+                roomId,
+                fromUserId = userId,
+                fromNickname = inviter.Nickname,
+                isPrivate = room.IsPrivate,
+                maxPlayers = room.MaxPlayers,
+            });
+
+            return Results.NoContent();
+        })
+            .WithName("InviteFriendToRoom");
 
         group.MapPost("/{roomId:int}/leave", async (int roomId, HttpContext http, AppDbContext db) =>
         {

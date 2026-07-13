@@ -11,8 +11,34 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Hubs;
 
 [Authorize]
-public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
+public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore presence) : Hub
 {
+    public override async Task OnConnectedAsync()
+    {
+        var userId = Context.User!.GetUserId();
+        if (await presence.ConnectAsync(userId))
+            await BroadcastPresenceAsync(userId, online: true);
+
+        await base.OnConnectedAsync();
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var userId = Context.User!.GetUserId();
+        if (await presence.DisconnectAsync(userId))
+            await BroadcastPresenceAsync(userId, online: false);
+
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    private async Task BroadcastPresenceAsync(int userId, bool online)
+    {
+        var friendIds = await Endpoints.FriendEndpoints.GetFriendIdsAsync(db, userId);
+        if (friendIds.Count > 0)
+            await Clients.Users(friendIds.Select(id => id.ToString()).ToList())
+                .SendAsync("FriendPresenceChanged", new { userId, online });
+    }
+
     public async Task JoinRoom(int roomId)
     {
         var userId = Context.User!.GetUserId();

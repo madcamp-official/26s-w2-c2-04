@@ -34,6 +34,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
     ConnectionMultiplexer.Connect(redisConnectionString));
 builder.Services.AddSingleton<GameStateStore>();
 builder.Services.AddSingleton<MatchmakingQueueStore>();
+builder.Services.AddSingleton<PresenceStore>();
+builder.Services.AddSingleton<RoomInviteStore>();
 builder.Services.AddHostedService<MatchmakingWorker>();
 
 builder.Services
@@ -125,6 +127,9 @@ app.MapAuthEndpoints();
 app.MapRoomEndpoints();
 app.MapMatchmakingEndpoints();
 app.MapLeaderboardEndpoints();
+app.MapProfileEndpoints();
+app.MapFriendEndpoints();
+app.MapFriendMessageEndpoints();
 app.MapHub<GameHub>("/hubs/game");
 
 app.Run();
