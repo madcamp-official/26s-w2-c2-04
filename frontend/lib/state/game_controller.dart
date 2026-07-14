@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:json_patch/json_patch.dart';
 import '../models/game_state.dart';
 import '../models/game_hub_event.dart';
+import '../models/game_presence_event.dart';
 import '../models/player.dart';
 import '../services/socket_service.dart';
 import '../services/play_service.dart';
@@ -107,6 +108,7 @@ class GameController extends StateNotifier<GameControllerState> {
   final PlayService _playService;
   final RoomService _roomService;
   StreamSubscription<GameHubEvent>? _sub;
+  StreamSubscription<GamePresenceEvent>? _presenceSub;
   int? _roomId;
   int _lastSequence = 0;
   // connect() 인자로 받은 방 참가자 로스터. 이미 게임이 진행 중인 방에
@@ -142,6 +144,8 @@ class GameController extends StateNotifier<GameControllerState> {
 
     await _sub?.cancel();
     _sub = _socket.events.listen(_onEvent);
+    await _presenceSub?.cancel();
+    _presenceSub = _socket.presenceEvents.listen(_onPresenceEvent);
 
     final socket = _socket;
     if (socket is SocketService) {
@@ -313,6 +317,24 @@ class GameController extends StateNotifier<GameControllerState> {
     return null;
   }
 
+  /// 게임 진행 중 상대의 연결 끊김/재접속/방장 이양을 안내로 띄운다. 실제 게임
+  /// 상태 처리(유예 후 탈주 확정 시 StateSync/TurnChanged/GameOver)는 서버가
+  /// 별도로 보내주므로 여기서는 사용자 안내만 담당한다.
+  void _onPresenceEvent(GamePresenceEvent event) {
+    final players = _currentRoomPlayers();
+    switch (event) {
+      case PlayerDisconnectedEvent(:final userId, :final graceSeconds):
+        final nickname = _nicknameOf(players, userId) ?? '상대방';
+        _setNotice('$nickname 님의 연결이 끊겼습니다. ($graceSeconds초 내 재접속을 기다립니다)');
+      case PlayerReconnectedEvent(:final userId):
+        final nickname = _nicknameOf(players, userId) ?? '상대방';
+        _setNotice('$nickname 님이 다시 접속했습니다.');
+      case HostChangedEvent(:final newHostId):
+        final nickname = _nicknameOf(players, newHostId);
+        _setNotice(nickname != null ? '방장이 $nickname 님으로 변경되었습니다.' : '방장이 변경되었습니다.');
+    }
+  }
+
   void _addRoomPlayer(int userId, String nickname) {
     final current = state;
     if (current is GameWaitingRoom) {
@@ -388,6 +410,7 @@ class GameController extends StateNotifier<GameControllerState> {
   @override
   void dispose() {
     _sub?.cancel();
+    _presenceSub?.cancel();
     _socket.dispose();
     super.dispose();
   }

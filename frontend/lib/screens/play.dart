@@ -19,6 +19,9 @@ import '../state/auth_controller.dart';
 import '../state/game_controller.dart';
 import '../state/lobby_controller.dart';
 import '../theme/app_theme.dart';
+import 'friends.dart';
+import 'profile.dart';
+import 'settings.dart';
 
 /// 방 대기실 + 실제 게임 진행 화면.
 /// GameHub 연결 전(WAITING)에는 대기실 UI를, 연결 후(PLAYING)에는 Flame으로 그린
@@ -47,7 +50,6 @@ class PlayScreen extends ConsumerStatefulWidget {
 }
 
 class _PlayScreenState extends ConsumerState<PlayScreen> with RouteAware {
-  final _chatController = TextEditingController();
   late final SplendorGame _splendorGame;
 
   int get _myUserId {
@@ -121,18 +123,42 @@ class _PlayScreenState extends ConsumerState<PlayScreen> with RouteAware {
   }
 
   Future<void> _reserve(SplendorCard card) {
-    return ref.read(gameControllerProvider.notifier).reserveCard(cardId: card.id);
+    return ref
+        .read(gameControllerProvider.notifier)
+        .reserveCard(cardId: card.id);
   }
 
   Future<void> _discardTokens(List<String> gems) {
     return ref.read(gameControllerProvider.notifier).discardTokens(gems);
   }
 
-  Future<void> _sendChat() async {
-    final text = _chatController.text.trim();
-    if (text.isEmpty) return;
-    await ref.read(gameControllerProvider.notifier).sendChatMessage(text);
-    _chatController.clear();
+  /// AppBar(대기실 단계)와 게임 화면 우하단 버튼 묶음(플레이 단계) 양쪽에서
+  /// 공유하는 "나가기" 로직. REST 퇴장/Hub LeaveRoom 중 하나가 네트워크 문제로
+  /// 실패하더라도(예: 배지로 최소화했다가 복귀한 직후처럼 연결이 막 재수립된
+  /// 상황), 배지 해제와 화면 나가기는 항상 이뤄져야 한다 — 그렇지 않으면 버튼이
+  /// 아무 반응도 없는 것처럼 보이고 좌하단 배지도 계속 남아 다른 참가자에게
+  /// 실제 퇴장이 전달됐는지 알 수 없게 된다.
+  Future<void> _leaveRoom({required bool isPlaying}) async {
+    try {
+      if (isPlaying) {
+        await ref.read(gameControllerProvider.notifier).leaveRoom();
+      } else {
+        // 대기실 단계(GameWaitingRoom 등)는 REST로 방을 나가는 것과 별개로,
+        // Hub 그룹에서도 빠져나가 다른 대기 참가자에게 PlayerLeft를 알려야 한다.
+        await ref
+            .read(lobbyControllerProvider.notifier)
+            .leaveRoom(widget.room.roomId);
+        await ref.read(gameControllerProvider.notifier).leaveRoom();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('나가기 처리 중 문제: $e')));
+      }
+    } finally {
+      ref.read(activeRoomProvider.notifier).state = null;
+      if (mounted) Navigator.of(context).pop();
+    }
   }
 
   @override
@@ -158,7 +184,6 @@ class _PlayScreenState extends ConsumerState<PlayScreen> with RouteAware {
   @override
   void dispose() {
     playRouteObserver.unsubscribe(this);
-    _chatController.dispose();
     super.dispose();
   }
 
@@ -177,50 +202,35 @@ class _PlayScreenState extends ConsumerState<PlayScreen> with RouteAware {
       }
       // 입장/퇴장/최종 라운드/시간초과 등 일회성 안내(notice)를 스낵바로 띄운다.
       final prevNotice = previous is GameConnected ? previous.notice : null;
-      if (next is GameConnected && next.notice != null && next.notice != prevNotice) {
+      if (next is GameConnected &&
+          next.notice != null &&
+          next.notice != prevNotice) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.notice!), duration: const Duration(seconds: 3)),
+          SnackBar(
+              content: Text(next.notice!),
+              duration: const Duration(seconds: 3)),
         );
       }
     });
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.localLabel ?? '방 ${widget.room.roomId}'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.exit_to_app),
-            tooltip: '나가기',
-            onPressed: () async {
-              // REST 퇴장/Hub LeaveRoom 중 하나가 네트워크 문제로 실패하더라도
-              // (예: 배지로 최소화했다가 복귀한 직후처럼 연결이 막 재수립된
-              // 상황), 배지 해제와 화면 나가기는 항상 이뤄져야 한다 — 그렇지
-              // 않으면 버튼이 아무 반응도 없는 것처럼 보이고 좌하단 배지도
-              // 계속 남아 다른 참가자에게 실제 퇴장이 전달됐는지 알 수 없게 된다.
-              try {
-                if (gameState is GameConnected) {
-                  await ref.read(gameControllerProvider.notifier).leaveRoom();
-                } else {
-                  // 대기실 단계(GameWaitingRoom 등)는 REST로 방을 나가는 것과 별개로,
-                  // Hub 그룹에서도 빠져나가 다른 대기 참가자에게 PlayerLeft를 알려야 한다.
-                  await ref
-                      .read(lobbyControllerProvider.notifier)
-                      .leaveRoom(widget.room.roomId);
-                  await ref.read(gameControllerProvider.notifier).leaveRoom();
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(SnackBar(content: Text('나가기 처리 중 문제: $e')));
-                }
-              } finally {
-                ref.read(activeRoomProvider.notifier).state = null;
-                if (context.mounted) Navigator.of(context).pop();
-              }
-            },
-          ),
-        ],
-      ),
+      // 게임이 실제로 시작되면(GameConnected) 뒤로가기/방 이름/턴 정보를 보여주던
+      // 상단 바를 완전히 없앤다 — 그만큼 생긴 여유는 _GameBoard의 게임보드가
+      // 그대로 흡수한다(아래 _GameBoard.build() 참고). "나가기"는 이 상태에서
+      // 사라지지 않도록 _GameBoard 우하단 버튼 묶음으로 옮겨서 유지한다.
+      appBar: gameState is GameConnected
+          ? null
+          : AppBar(
+              title: Text(widget.localLabel ?? '방 ${widget.room.roomId}'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.exit_to_app),
+                  tooltip: '나가기',
+                  onPressed: () =>
+                      _leaveRoom(isPlaying: gameState is GameConnected),
+                ),
+              ],
+            ),
       body: switch (gameState) {
         GameConnecting() => Center(
             child: widget.autoConnect
@@ -236,7 +246,11 @@ class _PlayScreenState extends ConsumerState<PlayScreen> with RouteAware {
                 : const CircularProgressIndicator(),
           ),
         GameError(:final message) => Center(child: Text('연결 실패: $message')),
-        GameConnected(:final gameState, :final pendingNobleChoice, :final players) =>
+        GameConnected(
+          :final gameState,
+          :final pendingNobleChoice,
+          :final players
+        ) =>
           _GameBoard(
             room: widget.room.copyWith(players: players),
             gameState: gameState,
@@ -246,8 +260,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> with RouteAware {
             onReserve: _reserve,
             onTakeTokens: _takeTokens,
             onDiscardTokens: _discardTokens,
-            chatController: _chatController,
-            onSendChat: _sendChat,
+            onLeaveRoom: () => _leaveRoom(isPlaying: true),
           ),
         GameWaitingRoom(:final players, :final readyPlayerIds) => _WaitingRoom(
             room: widget.room.copyWith(players: players),
@@ -323,7 +336,8 @@ class _WaitingRoom extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-            child: OrnateTitle(kicker: 'Private table', title: '방 ${room.roomId}'),
+            child:
+                OrnateTitle(kicker: 'Private table', title: '방 ${room.roomId}'),
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -346,7 +360,8 @@ class _WaitingRoom extends StatelessWidget {
                       isReady: readyPlayerIds.contains(player.id),
                       showReadyToggle: !isHost && player.id == myUserId,
                       onToggleReady: player.id == myUserId
-                          ? () => onToggleReady(!readyPlayerIds.contains(myUserId))
+                          ? () =>
+                              onToggleReady(!readyPlayerIds.contains(myUserId))
                           : null,
                     ),
                   ),
@@ -371,7 +386,9 @@ class _WaitingRoom extends StatelessWidget {
                 onPressed: canStart ? onStart : null,
                 child: Text(
                   isHost
-                      ? (_allOthersReady ? '게임 시작' : '모든 참가자가 준비할 때까지 기다리는 중...')
+                      ? (_allOthersReady
+                          ? '게임 시작'
+                          : '모든 참가자가 준비할 때까지 기다리는 중...')
                       : '방장이 시작하기를 기다리는 중...',
                 ),
               ),
@@ -408,7 +425,9 @@ class _PlayerSlot extends StatelessWidget {
       decoration: BoxDecoration(
         color: empty ? null : AppColors.goldFaint.withValues(alpha: 0.06),
         border: Border.all(
-          color: empty ? AppColors.goldHairline : AppColors.gold.withValues(alpha: 0.35),
+          color: empty
+              ? AppColors.goldHairline
+              : AppColors.gold.withValues(alpha: 0.35),
         ),
       ),
       child: Row(
@@ -416,16 +435,19 @@ class _PlayerSlot extends StatelessWidget {
           if (empty)
             const CircleAvatar(
               backgroundColor: Colors.transparent,
-              child: Icon(Icons.people_outline, color: AppColors.textMuted, size: 18),
+              child: Icon(Icons.people_outline,
+                  color: AppColors.textMuted, size: 18),
             )
           else
             CircleAvatar(
               backgroundColor: avatarToneFor(name),
-              backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+              backgroundImage:
+                  avatarUrl != null ? NetworkImage(avatarUrl!) : null,
               child: avatarUrl == null
                   ? Text(
                       name.characters.first,
-                      style: const TextStyle(color: AppColors.textHeading, fontSize: 13),
+                      style: const TextStyle(
+                          color: AppColors.textHeading, fontSize: 13),
                     )
                   : null,
             ),
@@ -445,20 +467,26 @@ class _PlayerSlot extends StatelessWidget {
             OutlinedButton(
               onPressed: onToggleReady,
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                side: BorderSide(color: isReady ? AppColors.gold : AppColors.goldHairline),
+                side: BorderSide(
+                    color: isReady ? AppColors.gold : AppColors.goldHairline),
               ),
               child: Text(
                 isReady ? '준비 완료' : '준비하기',
-                style: TextStyle(fontSize: 11, color: isReady ? AppColors.gold : AppColors.textMuted),
+                style: TextStyle(
+                    fontSize: 11,
+                    color: isReady ? AppColors.gold : AppColors.textMuted),
               ),
             )
           else if (!empty)
             Text(
               isReady ? 'READY' : 'WAITING',
-              style: kickerStyle(size: 10, color: isReady ? AppColors.gold : AppColors.textMuted),
+              style: kickerStyle(
+                  size: 10,
+                  color: isReady ? AppColors.gold : AppColors.textMuted),
             ),
         ],
       ),
@@ -473,12 +501,12 @@ class _GameBoard extends StatefulWidget {
   final GameState gameState;
   final List<String>? pendingNobleChoice;
   final SplendorGame game;
-  final Future<void> Function(SplendorCard card, {required bool reserved}) onPurchase;
+  final Future<void> Function(SplendorCard card, {required bool reserved})
+      onPurchase;
   final Future<void> Function(SplendorCard card) onReserve;
   final Future<void> Function(List<String> gems) onTakeTokens;
   final Future<void> Function(List<String> gems) onDiscardTokens;
-  final TextEditingController chatController;
-  final VoidCallback onSendChat;
+  final Future<void> Function() onLeaveRoom;
 
   const _GameBoard({
     required this.room,
@@ -489,8 +517,7 @@ class _GameBoard extends StatefulWidget {
     required this.onReserve,
     required this.onTakeTokens,
     required this.onDiscardTokens,
-    required this.chatController,
-    required this.onSendChat,
+    required this.onLeaveRoom,
   });
 
   @override
@@ -502,6 +529,9 @@ class _GameBoardState extends State<_GameBoard> {
   void initState() {
     super.initState();
     _pushStateToGame();
+    // 보드 위 카드를 탭하면 SplendorGame이 inspect에 그 카드를 실어주고, 여기서
+    // 상세 팝업(이미지/할인 전 가격/구매·예약)을 띄운다.
+    widget.game.inspect.addListener(_onInspect);
   }
 
   @override
@@ -513,6 +543,12 @@ class _GameBoardState extends State<_GameBoard> {
     }
   }
 
+  @override
+  void dispose() {
+    widget.game.inspect.removeListener(_onInspect);
+    super.dispose();
+  }
+
   void _pushStateToGame() {
     widget.game.updateGameState(
       widget.gameState,
@@ -520,28 +556,63 @@ class _GameBoardState extends State<_GameBoard> {
     );
   }
 
-  /// 백엔드 GameState.PlayerState에는 닉네임이 없어서 방 참가자 목록에서 조회합니다.
-  String _nicknameFor(int userId) {
-    for (final p in widget.room.players) {
-      if (p.id == userId) return p.nickname;
-    }
-    return 'User $userId';
+  void _onInspect() {
+    final req = widget.game.inspect.value;
+    if (req == null) return;
+    widget.game.inspect.value = null; // 한 번 소비하고 비운다
+    // 보드 위 카드(미구매) 또는 내 예약 카드는 실제로 구매/예약이 가능하다.
+    _showCardDetail(req.card, reserved: req.reserved, actionable: true);
   }
 
-  Future<void> _confirm(BoardSelection selection) async {
-    if (selection.card != null) {
-      await widget.onPurchase(selection.card!, reserved: selection.cardIsReserved);
-    } else if (selection.gems.isNotEmpty) {
-      await widget.onTakeTokens(selection.gemsAsList);
-    } else {
-      return;
-    }
+  /// 카드 상세 팝업. 보드 미구매 카드/내 예약 카드는 물론, 좌석 패널의 구매·예약
+  /// 카드 썸네일에서도 같은 팝업을 띄운다. [actionable]이 false면(이미 구매된
+  /// 카드나 다른 사람의 예약 카드) 정보만 보여주고 구매/예약 버튼은 내지 않는다.
+  Future<void> _showCardDetail(
+    SplendorCard card, {
+    required bool reserved,
+    required bool actionable,
+  }) async {
+    final me = widget.gameState.playerById(widget.game.myUserId);
+    final myTurn = widget.gameState.currentPlayerId == widget.game.myUserId;
+    final mustDiscard = me != null && myTurn && me.totalTokens > 10;
+    final canAct = actionable && me != null && myTurn && !mustDiscard;
+    final canBuy = canAct && canAffordCard(card, me);
+    // 예약은 아직 내 예약 카드가 아닌(보드 위) 카드만, 예약 칸(3장)이 남았을 때.
+    final canReserve = canAct && !reserved && canReserveMore(me);
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _CardDetailDialog(
+        card: card,
+        reserved: reserved,
+        canBuy: canBuy,
+        canReserve: canReserve,
+        onBuy: () {
+          Navigator.of(ctx).pop();
+          _purchaseCard(card, reserved: reserved);
+        },
+        onReserve: () {
+          Navigator.of(ctx).pop();
+          _reserveCard(card);
+        },
+      ),
+    );
+  }
+
+  Future<void> _purchaseCard(SplendorCard card,
+      {required bool reserved}) async {
+    await widget.onPurchase(card, reserved: reserved);
     widget.game.clearSelection();
   }
 
-  Future<void> _reserveSelected(BoardSelection selection) async {
-    if (selection.card == null) return;
-    await widget.onReserve(selection.card!);
+  Future<void> _reserveCard(SplendorCard card) async {
+    await widget.onReserve(card);
+    widget.game.clearSelection();
+  }
+
+  Future<void> _confirmTokens(BoardSelection selection) async {
+    if (selection.gems.isEmpty) return;
+    await widget.onTakeTokens(selection.gemsAsList);
     widget.game.clearSelection();
   }
 
@@ -557,28 +628,54 @@ class _GameBoardState extends State<_GameBoard> {
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '턴 ${widget.gameState.turnNumber} · 현재 차례: '
-                  '${widget.gameState.currentPlayerId != null ? _nicknameFor(widget.gameState.currentPlayerId!) : '-'}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              _TurnTimer(deadlineUtc: widget.gameState.turnDeadlineUtc),
-            ],
-          ),
-        ),
+        // 뒤로가기/방 이름/턴 번호/현재 차례를 보여주던 상단 바는 완전히
+        // 없앴다 — 현재 차례는 이미 좌석 오버레이(_PlayerSeatPanel.isCurrentTurn)
+        // 강조 표시로 알 수 있다. 그만큼 늘어난 세로 공간은 곧바로 아래
+        // Expanded(_SquareTable)의 LayoutBuilder 제약으로 흘러들어가 게임보드
+        // (boardEdge)가 더 커지고, 카드/토큰/귀족 크기도 board_component.dart의
+        // 비례 공식(cardW = size.x*0.1575 등)을 그대로 따라 함께 커진다.
         Expanded(
           flex: 5,
-          child: _SquareTable(
-            room: widget.room,
-            gameState: widget.gameState,
-            myUserId: widget.game.myUserId,
-            board: ClipRect(child: GameWidget(game: widget.game)),
+          child: Stack(
+            children: [
+              _SquareTable(
+                room: widget.room,
+                gameState: widget.gameState,
+                myUserId: widget.game.myUserId,
+                board: ClipRect(child: GameWidget(game: widget.game)),
+                onCardTap: (card, {required reserved, required actionable}) =>
+                    _showCardDetail(card,
+                        reserved: reserved, actionable: actionable),
+              ),
+              // 게임 중에도 메인 화면처럼 프로필/친구/설정을 열 수 있는 작은
+              // 버튼들과, 상단 바에서 옮겨온 "나가기"·제한시간 타이머를 우하귀에
+              // 한데 모았다(사용 중인 유일한 여유 모서리라 다른 위젯과 겹치지
+              // 않음이 이미 확인된 자리).
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _TurnTimer(deadlineUtc: widget.gameState.turnDeadlineUtc),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _InGameMenuButton(
+                          icon: Icons.exit_to_app,
+                          tooltip: '나가기',
+                          onTap: widget.onLeaveRoom,
+                        ),
+                        const SizedBox(width: 8),
+                        const _InGameMenuButtons(),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         if (mustDiscard)
@@ -589,13 +686,10 @@ class _GameBoardState extends State<_GameBoard> {
             builder: (context, selection, _) => _ActionBar(
               selection: selection,
               tokenBank: widget.gameState.tokenBank,
-              me: me,
-              onConfirm: () => _confirm(selection),
-              onReserve: () => _reserveSelected(selection),
+              onConfirm: () => _confirmTokens(selection),
               onCancel: widget.game.clearSelection,
             ),
           ),
-        _ChatBar(controller: widget.chatController, onSend: widget.onSendChat),
       ],
     );
   }
@@ -614,10 +708,17 @@ Color _gemPanelColor(String bonusWireValue) =>
 
 /// 좌/우 좌석 패널을 [RotatedBox]로 눕히기 전, 눕히지 않은 상태에서 차지하는
 /// "짧은 쪽" 치수. 좌/우에서는 이 값이 화면에 그려지는 폭이 되고, 상/하에서는
-/// 그냥 패널의 자연스러운 높이 예산으로 쓰입니다. _PlayerSeatPanel의 내용
-/// (아바타/이름 줄 + 토큰/보너스 줄 + 카드 줄 + 예약 카드 줄 + 패딩)이 이 안에
-/// 들어오도록 _GemCardStack의 치수와 함께 맞춰뒀습니다.
-const double _seatPanelCrossAxis = 180;
+/// 그냥 패널의 자연스러운 높이 예산으로 쓰입니다. 구매/예약 카드 줄이 이제
+/// 게임보드 오버레이(_GameBoardWithCardOverlays)로 옮겨갔으므로, _PlayerSeatPanel엔
+/// 아바타/이름 줄 + 토큰 줄 + 보너스 줄만 남아 예전(180)보다 훨씬 작다.
+const double _seatPanelCrossAxis = 100;
+
+/// 구매/예약 카드 오버레이(_PlayerCardsRow)가 보드 가장자리 바로 바깥에서
+/// 차지하는 두께(보드 변에 수직인 방향). 5색 카드 스택(_GemCardStack, 최대 높이
+/// 56) 기준으로 여유를 조금 더했다. 좌석 패널에서 카드 줄이 빠지며 생긴 여유
+/// (예전 180 - 지금 100 = 80)보다 이 값을 작게 잡아, 그 차이(약 16)만큼은
+/// 게임보드가 실제로 더 커지도록 한다.
+const double _cardsOverlayThickness = 64;
 
 /// playersInOrder에서 내 자리를 항상 "하단"에 고정하고, 턴 진행 순서를 시계
 /// 방향(하단 → 우측 → 상단 → 좌측)으로 배정합니다. Splendor는 2~4인이라 남는
@@ -665,20 +766,33 @@ _TableSeats _assignTableSeats(
   }
 }
 
-/// 정사각 테이블에 4명이 둘러앉은 형태의 보드 레이아웃. 중앙에 Flame 보드(귀족/
-/// 카드/토큰)를 정사각형으로 배치하고, 상/하 플레이어는 그대로, 좌/우 플레이어는
-/// [RotatedBox]로 90도 돌려 실제로 테이블에 둘러앉은 것처럼 보여줍니다.
+/// 카드 썸네일(구매/예약)을 탭했을 때 상세 팝업을 여는 콜백. [reserved]는 예약
+/// 카드 여부, [actionable]은 지금 구매/예약 행동을 걸 수 있는 카드인지(=보드 위
+/// 미구매 카드나 내 예약 카드)를 뜻한다.
+typedef CardTapCallback = void Function(
+  SplendorCard card, {
+  required bool reserved,
+  required bool actionable,
+});
+
+/// 정사각 테이블에 4명이 둘러앉은 형태의 보드 레이아웃. 중앙에는 게임보드
+/// (_GameBoardWithCardOverlays, Flame 귀족/카드/토큰 + 각 플레이어의 구매/예약
+/// 카드 오버레이)를 정사각형으로 배치하고, 상/하 좌석 패널(프로필/토큰/보너스)은
+/// 그대로, 좌/우 좌석 패널은 [RotatedBox]로 90도 돌려 실제로 테이블에 둘러앉은
+/// 것처럼 보여줍니다.
 class _SquareTable extends StatelessWidget {
   final GameRoom room;
   final GameState gameState;
   final int myUserId;
   final Widget board;
+  final CardTapCallback onCardTap;
 
   const _SquareTable({
     required this.room,
     required this.gameState,
     required this.myUserId,
     required this.board,
+    required this.onCardTap,
   });
 
   String _nicknameFor(int userId) {
@@ -741,19 +855,28 @@ class _SquareTable extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 좌/우가 차지하는 폭(_seatPanelCrossAxis, 있을 때만)을 뺀 나머지와
-        // 상/하가 차지하는 높이를 뺀 나머지 중 더 작은 쪽이 실제로 그려질
-        // 중앙 보드 한 변의 길이(AspectRatio(1)이 최종적으로 계산할 값과 동일).
-        final horizontalBudget =
-            (seats.left != null ? _seatPanelCrossAxis : 0.0) +
-                (seats.right != null ? _seatPanelCrossAxis : 0.0);
-        final verticalBudget =
-            (seats.top != null ? _seatPanelCrossAxis : 0.0) +
-                (seats.bottom != null ? _seatPanelCrossAxis : 0.0);
-        final boardEdge = math.min(
-          constraints.maxWidth - horizontalBudget,
-          constraints.maxHeight - verticalBudget,
-        ).clamp(0.0, double.infinity);
+        // 좌/우가 차지하는 폭(있을 때만) = 좌석 패널(_seatPanelCrossAxis) + 그
+        // 안쪽에 새로 생긴 카드 오버레이 통로(_cardsOverlayThickness). 상/하도
+        // 같은 두 값을 높이에 적용한다. 이 budget을 뺀 나머지 중 더 작은 쪽이
+        // 실제로 그려질 중앙 게임보드(정사각형) 한 변의 길이다.
+        final horizontalBudget = (seats.left != null
+                ? _seatPanelCrossAxis + _cardsOverlayThickness
+                : 0.0) +
+            (seats.right != null
+                ? _seatPanelCrossAxis + _cardsOverlayThickness
+                : 0.0);
+        final verticalBudget = (seats.top != null
+                ? _seatPanelCrossAxis + _cardsOverlayThickness
+                : 0.0) +
+            (seats.bottom != null
+                ? _seatPanelCrossAxis + _cardsOverlayThickness
+                : 0.0);
+        final boardEdge = math
+            .min(
+              constraints.maxWidth - horizontalBudget,
+              constraints.maxHeight - verticalBudget,
+            )
+            .clamp(0.0, double.infinity);
         final centerSeatWidth = boardEdge * 0.92;
 
         return Column(
@@ -765,7 +888,13 @@ class _SquareTable extends StatelessWidget {
                   _sideSeat(seats.left, 1),
                   Expanded(
                     child: Center(
-                      child: AspectRatio(aspectRatio: 1, child: board),
+                      child: _GameBoardWithCardOverlays(
+                        board: board,
+                        boardEdge: boardEdge,
+                        seats: seats,
+                        myUserId: myUserId,
+                        onCardTap: onCardTap,
+                      ),
                     ),
                   ),
                   _sideSeat(seats.right, 3),
@@ -781,8 +910,9 @@ class _SquareTable extends StatelessWidget {
 }
 
 /// 좌석 한 명 분: 아바타/이름/차례 표시 + 점수, 현재 보유 토큰(골드 포함) 줄,
-/// 보너스(할인) 요약 칩 줄, 그리고 구매한 카드를 보석 색상별로 겹쳐서 정리한
-/// 5개 열. 스플렌더는 공개 정보 게임이라 상대의 보유 토큰도 항상 보여줍니다.
+/// 보너스(할인) 요약 칩 줄. 구매/예약 카드는 더 이상 이 패널의 자식이 아니라
+/// 게임보드 오버레이(_GameBoardWithCardOverlays)의 자식이다 — 스플렌더는 공개
+/// 정보 게임이라 상대의 보유 토큰도 항상 보여줍니다.
 class _PlayerSeatPanel extends StatelessWidget {
   final GamePlayerState player;
   final String nickname;
@@ -799,14 +929,8 @@ class _PlayerSeatPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 백엔드 GemType은 PascalCase("Sapphire")로 직렬화되지만, 계약이 흔들릴 걸
-    // 대비해 Gem.fromWireValue로 정규화한 뒤 카드/보너스 모두 같은 키(wireValue)로
-    // 묶는다 — 대소문자가 어긋나 카드 더미나 보너스 숫자가 조용히 0으로 보이는
-    // 사고를 막기 위함이다.
-    final cardsByGem = <String, List<SplendorCard>>{};
-    for (final card in player.purchasedCards) {
-      final key = Gem.fromWireValue(card.bonus).wireValue;
-      cardsByGem.putIfAbsent(key, () => []).add(card);
-    }
+    // 대비해 Gem.fromWireValue로 정규화한 뒤 보너스/토큰 모두 같은 키(wireValue)로
+    // 묶는다 — 대소문자가 어긋나 숫자가 조용히 0으로 보이는 사고를 막기 위함이다.
     final bonusesByGem = <String, int>{
       for (final entry in player.bonuses.entries)
         Gem.fromWireValue(entry.key).wireValue: entry.value,
@@ -901,37 +1025,181 @@ class _PlayerSeatPanel extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final gem in gemDisplayOrder)
-                _GemCardStack(
-                  color: _gemPanelColor(gem),
-                  cards: cardsByGem[gem] ?? const [],
-                ),
-            ],
-          ),
-          // 예약 카드는 서버가 모든 참가자에게 실제 카드 정보를 그대로 보내므로
-          // (backend/Backend/testFrontend의 참고 클라이언트도 reservedCardIds를
-          // 전원에게 보여준다), 보드 위 "내 예약 카드 줄"과 별개로 다른 플레이어의
-          // 예약 카드도 여기 좌석 패널에 작게 표시합니다 — 이전에는 예약 카드가
-          // 이 화면 어디에도 그려지지 않아 다른 사람에게는 안 보이는 것처럼
-          // 보였습니다.
-          if (player.reservedCards.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final card in player.reservedCards)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 3),
-                    child: _ReservedCardThumb(card: card),
-                  ),
-              ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 한 플레이어의 구매 카드(보석 색상별로 겹쳐 쌓음) + 예약 카드 줄. 더 이상
+/// _PlayerSeatPanel의 자식이 아니라, 게임보드 오버레이
+/// (_GameBoardWithCardOverlays)의 자식으로 그 플레이어와 가장 가까운 보드
+/// 가장자리 바로 바깥에 붙는다. 카드를 탭하면 상세 팝업이 뜬다(구매 카드는
+/// 정보만, 내 예약 카드는 구매까지 가능 — [isMe]로 판단).
+class _PlayerCardsRow extends StatelessWidget {
+  final GamePlayerState player;
+  final bool isMe;
+  final CardTapCallback onCardTap;
+
+  const _PlayerCardsRow({
+    required this.player,
+    required this.isMe,
+    required this.onCardTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 백엔드 GemType은 PascalCase("Sapphire")로 직렬화되지만, 계약이 흔들릴 걸
+    // 대비해 Gem.fromWireValue로 정규화한다 — 카드 더미가 조용히 0으로 보이는
+    // 사고를 막기 위함이다.
+    final cardsByGem = <String, List<SplendorCard>>{};
+    for (final card in player.purchasedCards) {
+      final key = Gem.fromWireValue(card.bonus).wireValue;
+      cardsByGem.putIfAbsent(key, () => []).add(card);
+    }
+
+    // mainAxisSize.min으로 내용 폭에 맞게 스스로 크기를 정해야, 이 위젯을 감싸는
+    // Center(_GameBoardWithCardOverlays)가 보드 가장자리 중점을 지나는 선 위에
+    // 정확히 중앙 정렬할 수 있다(Row가 부모 폭을 그대로 채워버리면 Center가
+    // 아무 효과도 없다).
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final gem in gemDisplayOrder)
+          Padding(
+            padding: const EdgeInsets.only(right: 3),
+            child: _GemCardStack(
+              color: _gemPanelColor(gem),
+              cards: cardsByGem[gem] ?? const [],
+              onCardTap: (card) =>
+                  onCardTap(card, reserved: false, actionable: false),
             ),
-          ],
+          ),
+        // 예약 카드는 서버가 모든 참가자에게 실제 카드 정보를 그대로 보내므로
+        // (참고 클라이언트도 reservedCardIds를 전원에게 보여준다) 각 플레이어의
+        // 구매 카드 오른쪽에 함께 그린다.
+        if (player.reservedCards.isNotEmpty) ...[
+          Container(
+            width: 1,
+            height: 40,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            color: AppColors.goldHairline,
+          ),
+          for (final card in player.reservedCards)
+            Padding(
+              padding: const EdgeInsets.only(right: 3),
+              child: _ReservedCardThumb(
+                card: card,
+                onTap: () => onCardTap(card, reserved: true, actionable: isMe),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 게임보드 위젯 — Flame 보드(귀족/미구매 카드/토큰 뱅크)를 정사각형 한가운데
+/// 두고, 자리가 찬 각 방향(top/bottom/left/right)마다 그 플레이어의 구매/예약
+/// 카드 오버레이(_PlayerCardsRow)를 보드와 가장 가까운 변 바로 바깥에 띄운다.
+///
+/// 각 오버레이는 그 변과 길이가 같은 통로 사각형(너비/높이 = boardEdge) 안에서
+/// [Center]로 배치되므로, 오버레이의 중심은 항상 "그 변의 중점을 지나는 수직선"
+/// 위에 오게 된다 — 좌/우는 좌석 패널과 같은 방향으로 [RotatedBox] 처리해 눕힌다.
+/// 이 위젯 자체가 카드 오버레이의 부모이며(더 이상 _PlayerSeatPanel의 자식이
+/// 아니다), 보드 사각형과 카드 오버레이 통로는 서로 겹치지 않는 별개의
+/// [Positioned] 영역을 차지한다.
+class _GameBoardWithCardOverlays extends StatelessWidget {
+  final Widget board;
+  final double boardEdge;
+  final _TableSeats seats;
+  final int myUserId;
+  final CardTapCallback onCardTap;
+
+  const _GameBoardWithCardOverlays({
+    required this.board,
+    required this.boardEdge,
+    required this.seats,
+    required this.myUserId,
+    required this.onCardTap,
+  });
+
+  /// 통로 폭보다 카드 줄이 넓어지는 극단적인 경우(카드가 아주 많이 쌓인 경우
+  /// 등)에도 옆 통로(다른 플레이어의 오버레이나 보드)를 침범해 겹치지 않도록
+  /// ClipRect로 통로 경계에서 잘라낸다.
+  Widget _cardsOverlay(GamePlayerState? player) {
+    if (player == null) return const SizedBox.shrink();
+    return ClipRect(
+      child: _PlayerCardsRow(
+        player: player,
+        isMe: player.userId == myUserId,
+        onCardTap: onCardTap,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final leftExtent = seats.left != null ? _cardsOverlayThickness : 0.0;
+    final rightExtent = seats.right != null ? _cardsOverlayThickness : 0.0;
+    final topExtent = seats.top != null ? _cardsOverlayThickness : 0.0;
+    final bottomExtent = seats.bottom != null ? _cardsOverlayThickness : 0.0;
+
+    return SizedBox(
+      width: leftExtent + boardEdge + rightExtent,
+      height: topExtent + boardEdge + bottomExtent,
+      child: Stack(
+        children: [
+          Positioned(
+            left: leftExtent,
+            top: topExtent,
+            width: boardEdge,
+            height: boardEdge,
+            child: board,
+          ),
+          if (seats.top != null)
+            Positioned(
+              left: leftExtent,
+              top: 0,
+              width: boardEdge,
+              height: topExtent,
+              child: Center(child: _cardsOverlay(seats.top)),
+            ),
+          if (seats.bottom != null)
+            Positioned(
+              left: leftExtent,
+              top: topExtent + boardEdge,
+              width: boardEdge,
+              height: bottomExtent,
+              child: Center(child: _cardsOverlay(seats.bottom)),
+            ),
+          if (seats.left != null)
+            Positioned(
+              left: 0,
+              top: topExtent,
+              width: leftExtent,
+              height: boardEdge,
+              child: Center(
+                child: RotatedBox(
+                  quarterTurns: 1,
+                  child: _cardsOverlay(seats.left),
+                ),
+              ),
+            ),
+          if (seats.right != null)
+            Positioned(
+              left: leftExtent + boardEdge,
+              top: topExtent,
+              width: rightExtent,
+              height: boardEdge,
+              child: Center(
+                child: RotatedBox(
+                  quarterTurns: 3,
+                  child: _cardsOverlay(seats.right),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1012,7 +1280,8 @@ class _TokenChip extends StatelessWidget {
 /// reservedCards를 전원에게 실제 카드 정보로 보내므로 감출 이유가 없습니다).
 class _ReservedCardThumb extends StatelessWidget {
   final SplendorCard card;
-  const _ReservedCardThumb({required this.card});
+  final VoidCallback? onTap;
+  const _ReservedCardThumb({required this.card, this.onTap});
 
   static const _w = 18.0;
   static const _h = 25.0;
@@ -1020,19 +1289,22 @@ class _ReservedCardThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final imagePath = GameAssets.cardFace(card.id);
-    return Container(
-      width: _w,
-      height: _h,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(3),
-        color: AppColors.panelAlt,
-        border: Border.all(color: AppColors.goldHairline, width: 1),
-        image: imagePath != null
-            ? DecorationImage(
-                image: AssetImage('assets/image/$imagePath'),
-                fit: BoxFit.cover,
-              )
-            : null,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: _w,
+        height: _h,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(3),
+          color: AppColors.panelAlt,
+          border: Border.all(color: AppColors.goldHairline, width: 1),
+          image: imagePath != null
+              ? DecorationImage(
+                  image: AssetImage('assets/image/$imagePath'),
+                  fit: BoxFit.cover,
+                )
+              : null,
+        ),
       ),
     );
   }
@@ -1044,12 +1316,14 @@ class _ReservedCardThumb extends StatelessWidget {
 class _GemCardStack extends StatelessWidget {
   final Color color;
   final List<SplendorCard> cards;
+  final void Function(SplendorCard card)? onCardTap;
 
   static const _cardW = 26.0;
   static const _cardH = 36.0;
   static const _maxColumnH = 56.0;
 
-  const _GemCardStack({required this.color, required this.cards});
+  const _GemCardStack(
+      {required this.color, required this.cards, this.onCardTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1081,7 +1355,10 @@ class _GemCardStack extends StatelessWidget {
           for (var i = 0; i < cards.length; i++)
             Positioned(
               top: overlap * i,
-              child: _CardThumb(card: cards[i], color: color),
+              child: GestureDetector(
+                onTap: onCardTap == null ? null : () => onCardTap!(cards[i]),
+                child: _CardThumb(card: cards[i], color: color),
+              ),
             ),
         ],
       ),
@@ -1134,7 +1411,8 @@ class _TurnTimerState extends State<_TurnTimer> {
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+    _ticker =
+        Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
   }
 
   @override
@@ -1148,7 +1426,8 @@ class _TurnTimerState extends State<_TurnTimer> {
     final deadline = widget.deadlineUtc;
     if (deadline == null) return const SizedBox.shrink();
 
-    final remaining = deadline.difference(DateTime.now().toUtc()).inSeconds.clamp(0, 99);
+    final remaining =
+        deadline.difference(DateTime.now().toUtc()).inSeconds.clamp(0, 99);
     final isWarning = remaining <= 5;
 
     return Container(
@@ -1158,7 +1437,8 @@ class _TurnTimerState extends State<_TurnTimer> {
             ? Colors.red.withValues(alpha: 0.15)
             : AppColors.goldFaint.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isWarning ? Colors.redAccent : AppColors.goldHairline),
+        border: Border.all(
+            color: isWarning ? Colors.redAccent : AppColors.goldHairline),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1183,50 +1463,36 @@ class _TurnTimerState extends State<_TurnTimer> {
   }
 }
 
+/// 토큰 획득 전용 하단 액션 바. 카드 구매/예약은 카드 상세 팝업(_CardDetailDialog)
+/// 으로 옮겨졌으므로, 이 바는 이제 보드에서 고른 토큰을 확정/취소하는 일만 한다.
 class _ActionBar extends StatelessWidget {
   final BoardSelection selection;
   final Map<String, int> tokenBank;
-  final GamePlayerState? me;
   final VoidCallback onConfirm;
-  final VoidCallback onReserve;
   final VoidCallback onCancel;
 
   const _ActionBar({
     required this.selection,
     required this.tokenBank,
-    required this.me,
     required this.onConfirm,
-    required this.onReserve,
     required this.onCancel,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (selection.isEmpty) {
+    if (selection.gems.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 10),
         child: Text(
-          '카드나 토큰을 탭해서 선택하세요.',
+          '토큰을 탭해서 가져오거나, 카드를 탭해서 구매/예약하세요.',
           style: TextStyle(color: AppColors.textMuted, fontSize: 12),
         ),
       );
     }
 
-    final isGemSelection = selection.card == null;
-    final myPlayer = me;
-    // me가 없으면(관전 등 "나"를 특정할 수 없는 경우) 판단 근거가 없으니
-    // 서버 판정에 맡기고 버튼을 막지 않는다.
-    final canConfirm = isGemSelection
-        ? isValidTokenSelection(selection.gemsAsList, tokenBank)
-        : (myPlayer == null || canAffordCard(selection.card!, myPlayer));
-    final showReserve = selection.card != null && !selection.cardIsReserved;
-    final canReserve =
-        showReserve && (myPlayer == null || canReserveMore(myPlayer));
+    final canConfirm = isValidTokenSelection(selection.gemsAsList, tokenBank);
     final selectedTokenCount =
         selection.gems.values.fold<int>(0, (sum, v) => sum + v);
-    final confirmLabel = selection.card != null
-        ? (selection.cardIsReserved ? '예약 카드 구매' : '구매')
-        : '토큰 획득 ($selectedTokenCount/3)';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1235,20 +1501,203 @@ class _ActionBar extends StatelessWidget {
           Expanded(
             child: ElevatedButton(
               onPressed: canConfirm ? onConfirm : null,
-              child: Text(confirmLabel),
+              child: Text('토큰 획득 ($selectedTokenCount/3)'),
             ),
           ),
-          if (showReserve) ...[
-            const SizedBox(width: 8),
-            OutlinedButton(
-              onPressed: canReserve ? onReserve : null,
-              child: const Text('예약'),
-            ),
-          ],
           const SizedBox(width: 8),
           TextButton(onPressed: onCancel, child: const Text('취소')),
         ],
       ),
+    );
+  }
+}
+
+/// 게임 화면 우하귀의 프로필/친구/설정 버튼 묶음. 메인 화면 하단 우측과 같은
+/// 구성으로, 각 화면을 게임 위에 라우트로 띄운다(게임은 그대로 아래 유지).
+class _InGameMenuButtons extends StatelessWidget {
+  const _InGameMenuButtons();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _InGameMenuButton(
+          icon: Icons.person_outline,
+          tooltip: '프로필',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _InGameMenuButton(
+          icon: Icons.group_outlined,
+          tooltip: '친구',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const FriendsScreen()),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _InGameMenuButton(
+          icon: Icons.settings_outlined,
+          tooltip: '설정',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InGameMenuButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  const _InGameMenuButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: AppColors.panel.withValues(alpha: 0.85),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(9),
+            child: Icon(icon, size: 18, color: AppColors.gold),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 카드를 탭했을 때 뜨는 상세 팝업. 카드 이미지와 "할인 적용 전" 인쇄 가격
+/// (card.cost 원본)을 보여주고, 지금 실제로 할 수 있는 행동만 버튼으로 노출한다
+/// (구매/예약은 호출부에서 내 턴·보유 자원·예약 칸을 따져 canBuy/canReserve로
+/// 넘겨준다). 상대 카드나 내 턴이 아닐 때는 정보만 보여준다.
+class _CardDetailDialog extends StatelessWidget {
+  final SplendorCard card;
+  final bool reserved;
+  final bool canBuy;
+  final bool canReserve;
+  final VoidCallback onBuy;
+  final VoidCallback onReserve;
+
+  const _CardDetailDialog({
+    required this.card,
+    required this.reserved,
+    required this.canBuy,
+    required this.canReserve,
+    required this.onBuy,
+    required this.onReserve,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final imagePath = GameAssets.cardFace(card.id);
+    return AlertDialog(
+      backgroundColor: AppColors.panel,
+      title: Row(
+        children: [
+          Text('Tier ${card.tier}', style: headingStyle(size: 15)),
+          const Spacer(),
+          if (card.points > 0)
+            Text('${card.points}점', style: headingStyle(size: 15)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 150,
+              height: 210,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: _gemPanelColor(card.bonus).withValues(alpha: 0.85),
+                image: imagePath != null
+                    ? DecorationImage(
+                        image: AssetImage('assets/image/$imagePath'),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _BonusChip(color: _gemPanelColor(card.bonus), count: 1),
+              const SizedBox(width: 8),
+              const Text('구매 시 이 색 할인 +1',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text('할인 적용 전 가격',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              // 이 카드가 애초에 요구하지 않는 색(card.cost에 키 자체가 없는 색)은
+              // 표기하지 않는다 — 0을 보여줄 대상은 "요구하지만 다 냈거나 할인으로
+              // 상쇄된" 경우뿐이라 여기(할인 적용 전 원가)에서는 해당되지 않는다.
+              for (final gem in gemDisplayOrder)
+                if (card.cost.containsKey(gem))
+                  Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: _gemPanelColor(gem),
+                            shape: BoxShape.circle,
+                            border:
+                                Border.all(color: Colors.white24, width: 0.5),
+                          ),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${card.cost[gem] ?? 0}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        if (canReserve)
+          OutlinedButton(onPressed: onReserve, child: const Text('예약')),
+        if (canBuy)
+          ElevatedButton(
+            onPressed: onBuy,
+            child: Text(reserved ? '예약 카드 구매' : '구매'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('닫기'),
+        ),
+      ],
     );
   }
 }
@@ -1376,7 +1825,8 @@ class _DiscardStepper extends StatelessWidget {
               border: Border.all(color: Colors.white24, width: 0.5),
             ),
           ),
-          Text('$picked/$have', style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+          Text('$picked/$have',
+              style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1397,31 +1847,6 @@ class _DiscardStepper extends StatelessWidget {
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChatBar extends StatelessWidget {
-  final TextEditingController controller;
-  final VoidCallback onSend;
-  const _ChatBar({required this.controller, required this.onSend});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: controller,
-              decoration: const InputDecoration(hintText: '채팅 (친구에게만 전달됩니다)'),
-              onSubmitted: (_) => onSend(),
-            ),
-          ),
-          IconButton(icon: const Icon(Icons.send), onPressed: onSend),
         ],
       ),
     );

@@ -8,6 +8,7 @@ import 'state/active_room_controller.dart';
 import 'state/auth_controller.dart';
 import 'theme/app_theme.dart';
 import 'widgets/minimized_room_badge.dart';
+import 'widgets/social_toast_overlay.dart';
 
 /// MaterialApp.builder는 실제 Navigator 바깥(위)에서 실행되므로, 배지에서
 /// 화면을 미는(push) 데 필요한 NavigatorState를 여기 전역 키로 들고 있는다.
@@ -43,6 +44,8 @@ class MyApp extends ConsumerWidget {
             if (child != null) child,
             if (activeRoom != null && !roomScreenVisible)
               MinimizedRoomBadge(room: activeRoom, navigatorKey: rootNavigatorKey),
+            // 로그인 중 어느 화면에서든 친구 메시지/요청이 오면 우하귀에 알림을 띄운다.
+            const SocialToastOverlay(),
           ],
         );
       },

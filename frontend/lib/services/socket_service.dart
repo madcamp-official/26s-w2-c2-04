@@ -8,6 +8,7 @@
 import 'dart:async';
 import 'package:signalr_netcore/signalr_client.dart';
 import '../models/game_hub_event.dart';
+import '../models/game_presence_event.dart';
 import '../utils/constants.dart';
 
 /// 방장이 아니어도 방 시작 이전에 예약해둔 콜백을 붙일 수 있도록,
@@ -15,6 +16,11 @@ import '../utils/constants.dart';
 /// FakeGameSocket으로 손쉽게 대체할 수 있습니다.
 abstract class GameSocket {
   Stream<GameHubEvent> get events;
+
+  /// 진행 중 게임에서의 접속 상태 변화(연결 끊김/재접속/방장 이양). GameHubEvent와
+  /// 별개 스트림으로 둬서 코드 생성(freezed) 없이 안내만 처리한다.
+  Stream<GamePresenceEvent> get presenceEvents;
+
   HubConnectionState? get connectionState;
 
   Future<void> connect({required int roomId, required String accessToken});
@@ -39,6 +45,7 @@ abstract class GameSocket {
 class SocketService implements GameSocket {
   HubConnection? _hubConnection;
   final _eventController = StreamController<GameHubEvent>.broadcast();
+  final _presenceController = StreamController<GamePresenceEvent>.broadcast();
 
   // GameHub의 모든 Hub 메서드(TakeTokens 등)는 roomId를 첫 인자로 받으므로,
   // connect() 시점에 저장해두고 이후 모든 invoke에 실어 보냅니다.
@@ -46,6 +53,9 @@ class SocketService implements GameSocket {
 
   @override
   Stream<GameHubEvent> get events => _eventController.stream;
+
+  @override
+  Stream<GamePresenceEvent> get presenceEvents => _presenceController.stream;
 
   @override
   HubConnectionState? get connectionState => _hubConnection?.state;
@@ -92,6 +102,18 @@ class SocketService implements GameSocket {
     ]) {
       connection.on(method, (args) {
         _eventController.add(parseGameHubEvent(method, args));
+      });
+    }
+
+    // 접속 상태 변화(연결 끊김/재접속/방장 이양)는 별도 스트림으로 흘려보낸다.
+    for (final method in const [
+      'PlayerDisconnected',
+      'PlayerReconnected',
+      'HostChanged',
+    ]) {
+      connection.on(method, (args) {
+        final event = parseGamePresenceEvent(method, args);
+        if (event != null) _presenceController.add(event);
       });
     }
 
@@ -194,5 +216,6 @@ class SocketService implements GameSocket {
   Future<void> dispose() async {
     await disconnect();
     await _eventController.close();
+    await _presenceController.close();
   }
 }

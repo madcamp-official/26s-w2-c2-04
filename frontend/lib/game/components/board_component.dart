@@ -17,7 +17,8 @@ import 'deck_back_component.dart';
 import 'gem_component.dart';
 import 'noble_component.dart';
 
-class BoardComponent extends PositionComponent with HasGameReference<FlameGame> {
+class BoardComponent extends PositionComponent
+    with HasGameReference<FlameGame> {
   final int myUserId;
   final Future<Sprite> Function(String path) loadSprite;
   final void Function(SplendorCard card, bool reserved) onCardTap;
@@ -74,7 +75,8 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
 
   /// 최신 상태로 보드를 다시 그립니다. 비동기(스프라이트 로딩)라서, 그리는 도중
   /// 더 최신 호출이 들어오면(연속 StateSync) 오래된 호출은 스스로 포기합니다.
-  Future<void> updateBoard(GameState state, {required List<String> nobleChoiceIds}) async {
+  Future<void> updateBoard(GameState state,
+      {required List<String> nobleChoiceIds}) async {
     final myGeneration = ++_generation;
     final size = game.size;
 
@@ -90,24 +92,17 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
     // 카드 폭을 기준으로 간격/귀족/토큰 크기를 모두 비례 산출한 뒤, 실제로 쓰이는
     // 콘텐츠 전체의 가로/세로 크기(contentWidth/contentHeight)를 구해서 "보드
     // 크기 - 콘텐츠 크기"의 남는 공간을 좌우/상하에 똑같이 나눠 마진으로 씁니다.
-    // (예전에는 leftMargin=size.x*0.04, topMargin=size.y*0.06처럼 고정 비율이라
-    // 실제 콘텐츠가 보드의 절반 정도만 채우고 오른쪽/아래쪽에 쓰이지 않는 공간이
-    // 훨씬 크게 남았습니다.)
-    // 카드 폭 비율(예전 0.105의 1.5배)을 키운 만큼, 카드 사이 간격 비율은
-    // 0.14 -> 0.05로 줄여서 전체 콘텐츠 폭(contentWidth)이 보드 폭을
-    // 넘지 않도록 맞췄다(간격은 "기물"이 아니므로 줄여도 1.5배 요구사항과
-    // 무관하다).
     final cardW = size.x * 0.1575;
     final cardH = cardW * 1.4;
     final gap = cardW * 0.05;
-    final sectionGap = gap * 2; // 티어 카드 줄과 예약 카드 칸 사이 구획 간격
     final nobleSize = Vector2.all(cardW * 0.75);
     final tokenIconSize = cardW * 0.55;
     final tokenLabelHeight = tokenIconSize * 0.4; // 아이콘 밑에 개수를 표시할 공간
     final tokenSize = Vector2(tokenIconSize, tokenIconSize + tokenLabelHeight);
 
-    // 가로: [덱 뒷면] + 공개 카드 4장(티어 줄) + 구획 간격 + 예약 카드 1칸.
-    final contentWidth = 5 * cardW + 4 * gap + sectionGap + cardW;
+    // 가로: [덱 뒷면] + 공개 카드 4장(티어 줄). 예약 카드는 더 이상 보드 안에
+    // 그리지 않고, 각 플레이어의 좌석 오버레이(_PlayerSeatPanel)에서 보여준다.
+    final contentWidth = 5 * cardW + 4 * gap;
     // 세로: 귀족 줄 + 티어 3줄 + 토큰 줄, 줄 사이 4번의 간격.
     final contentHeight = nobleSize.y + 3 * cardH + tokenSize.y + 4 * gap;
 
@@ -127,7 +122,8 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
     final newDeckBacks = <DeckBackComponent>[];
 
     for (final tier in [3, 2, 1]) {
-      final cards = _stableTierOrder(tier, tierRows[tier] ?? const <SplendorCard>[]);
+      final cards =
+          _stableTierOrder(tier, tierRows[tier] ?? const <SplendorCard>[]);
       final y = tierRowY[tier]!;
 
       final backSprite = await loadSprite(GameAssets.cardBack(tier));
@@ -141,7 +137,8 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
 
       for (var i = 0; i < cards.length; i++) {
         final card = cards[i];
-        final imagePath = GameAssets.cardFace(card.id) ?? GameAssets.cardBack(card.tier);
+        final imagePath =
+            GameAssets.cardFace(card.id) ?? GameAssets.cardBack(card.tier);
         final sprite = await loadSprite(imagePath);
         if (myGeneration != _generation) return;
 
@@ -153,28 +150,6 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
           sprite: sprite,
           onTap: onCardTap,
           position: Vector2(leftMargin + (cardW + gap) * (i + 1), y),
-          size: Vector2(cardW, cardH),
-          remainingCost: _remainingCostFor(card, me),
-        ));
-      }
-    }
-
-    // 내 예약 카드 줄(있으면 화면 오른쪽에 세로로 표시)
-    if (me != null) {
-      final reservedX = leftMargin + 5 * cardW + 4 * gap + sectionGap;
-      for (var i = 0; i < me.reservedCards.length; i++) {
-        final card = me.reservedCards[i];
-        final imagePath = GameAssets.cardFace(card.id) ?? GameAssets.cardBack(card.tier);
-        final sprite = await loadSprite(imagePath);
-        if (myGeneration != _generation) return;
-
-        newCards.add(CardComponent(
-          card: card,
-          reserved: true,
-          affordable: canAffordCard(card, me),
-          sprite: sprite,
-          onTap: onCardTap,
-          position: Vector2(reservedX, tierRowY[3]! + (cardH + gap) * i),
           size: Vector2(cardW, cardH),
           remainingCost: _remainingCostFor(card, me),
         ));

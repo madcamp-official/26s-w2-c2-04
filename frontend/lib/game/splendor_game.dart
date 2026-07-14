@@ -12,6 +12,14 @@ import '../models/noble.dart';
 import 'board_selection.dart';
 import 'components/board_component.dart';
 
+/// 카드 탭으로 요청된 "상세 보기" 대상. reserved면 내 예약 카드(예약 카드 구매
+/// 가능), 아니면 보드 위 미구매 카드(구매/예약 가능)를 뜻한다.
+class CardInspection {
+  final SplendorCard card;
+  final bool reserved;
+  const CardInspection(this.card, this.reserved);
+}
+
 class SplendorGame extends FlameGame {
   final int myUserId;
 
@@ -27,6 +35,11 @@ class SplendorGame extends FlameGame {
   });
 
   final ValueNotifier<BoardSelection> selection = ValueNotifier(BoardSelection.empty);
+
+  /// 카드를 탭하면(보드 미구매 카드 또는 내 예약 카드) 선택 대신 "상세 보기"를
+  /// 요청한다 — play.dart가 이 값을 구독해 카드 이미지/할인 전 가격/구매·예약
+  /// 버튼이 든 팝업을 띄운다(토큰만 하단 액션바로 확정하는 새 행동 모델).
+  final ValueNotifier<CardInspection?> inspect = ValueNotifier(null);
 
   late final BoardComponent _board;
   GameState? _latestState;
@@ -110,16 +123,11 @@ class SplendorGame extends FlameGame {
     }
   }
 
-  // 카드와 토큰은 한 턴에 하나만 고를 수 있는 서로 다른 행동이라, 한쪽을
-  // 고르면 반대쪽 선택은 항상 지운다(둘 다 선택된 채로 남는 걸 막는다).
+  // 카드 탭은 이제 선택이 아니라 "상세 보기" 요청이다(구매/예약은 그 팝업 안에서).
+  // 진행 중이던 토큰 선택은 카드를 열어보는 것만으로 지우지 않는다 — 팝업을 닫고
+  // 그대로 토큰을 이어서 고를 수 있어야 하기 때문이다.
   void _handleCardTap(SplendorCard card, bool reserved) {
-    final current = selection.value;
-    if (current.card?.id == card.id) {
-      selection.value = current.copyWith(clearCard: true);
-    } else {
-      selection.value = BoardSelection(card: card, cardIsReserved: reserved);
-    }
-    _board.applySelectionHighlight(selection.value);
+    inspect.value = CardInspection(card, reserved);
   }
 
   void _handleGemTap(String gem) {

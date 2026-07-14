@@ -9,9 +9,15 @@ import 'package:flame/components.dart';
 import 'package:flutter/painting.dart' show FontWeight, TextStyle;
 import '../gem_colors.dart';
 
-/// [amounts](색상 wireValue -> 남은 개수)를 [parent] 하단 가운데에 pip로 그립니다.
-/// 0 이하인 색상은 건너뜁니다. gemDisplayOrder(파랑/빨강/초록/검정/흰색) 순서를
-/// 그대로 따라 항상 같은 자리에 같은 색이 나오게 합니다.
+/// [amounts](색상 wireValue -> 남은 개수)를 [parent] 하단 "왼쪽"에 색상 숫자로
+/// 그립니다. [amounts]에 아예 키가 없는 색(그 카드/귀족이 애초에 요구하지 않는
+/// 색)은 표기 자체를 건너뛰고, 키가 있는 색은(보너스로 다 상쇄돼 0이 되더라도)
+/// gemDisplayOrder(파랑/빨강/초록/검정/흰색) 순서로 표기합니다 — "이 카드가
+/// 요구하는 색이 무엇인지"와 "그중 얼마나 남았는지"를 함께 보여주기 위함입니다.
+///
+/// 예전에는 각 숫자 밑에 보석 색 원(pip)을 깔고 가운데 정렬했지만, 이제는 원 없이
+/// 숫자만 보석 색으로 칠해 카드 왼쪽으로 몰아 정렬합니다(가독성을 위해 어두운
+/// 색은 밝게 보정하고, 숫자 뒤에는 얇은 반투명 띠만 깝니다).
 void addCostPipRow(
   PositionComponent parent, {
   required Map<String, int> amounts,
@@ -20,39 +26,45 @@ void addCostPipRow(
 }) {
   final entries = [
     for (final wireValue in gemDisplayOrder)
-      if ((amounts[wireValue] ?? 0) > 0) MapEntry(wireValue, amounts[wireValue]!),
+      if (amounts.containsKey(wireValue))
+        MapEntry(wireValue, amounts[wireValue]!),
   ];
   if (entries.isEmpty) return;
 
-  const gap = 3.0;
-  final totalWidth = entries.length * pipDiameter + (entries.length - 1) * gap;
-  var x = (componentSize.x - totalWidth) / 2;
-  final y = componentSize.y - pipDiameter - 4;
+  const gap = 6.0;
+  const leftPad = 5.0;
+  final glyphWidth = pipDiameter; // 숫자 한 글자가 차지할 대략적인 폭
+  final fontSize = pipDiameter * 0.95;
+  final totalWidth =
+      leftPad * 2 + entries.length * glyphWidth + (entries.length - 1) * gap;
+  final stripHeight = fontSize + 6;
+  final y = componentSize.y - stripHeight - 3;
 
   parent.add(RectangleComponent(
-    position: Vector2(0, y - 3),
-    size: Vector2(componentSize.x, pipDiameter + 6),
+    position: Vector2(0, y),
+    size: Vector2(totalWidth.clamp(0, componentSize.x), stripHeight),
     paint: Paint()..color = const Color(0x99140D0A),
   ));
 
+  var x = leftPad;
   for (final entry in entries) {
-    parent.add(CircleComponent(
-      radius: pipDiameter / 2,
-      position: Vector2(x, y),
-      paint: Paint()..color = gemPipColor(entry.key),
-    ));
     parent.add(TextComponent(
       text: '${entry.value}',
-      position: Vector2(x + pipDiameter / 2, y + pipDiameter / 2),
-      anchor: Anchor.center,
+      position: Vector2(x, y + stripHeight / 2),
+      anchor: Anchor.centerLeft,
       textRenderer: TextPaint(
         style: TextStyle(
-          color: gemPipTextColor(entry.key),
-          fontSize: pipDiameter * 0.62,
+          color: _legibleOnDark(gemPipColor(entry.key)),
+          fontSize: fontSize,
           fontWeight: FontWeight.bold,
         ),
       ),
     ));
-    x += pipDiameter + gap;
+    x += glyphWidth + gap;
   }
 }
+
+/// 어두운 띠 위에서도 읽히도록 보석 색을 흰색 쪽으로 살짝 당겨 밝힙니다
+/// (특히 onyx처럼 어두운 색). 이미 밝은 색(diamond 등)은 큰 변화가 없습니다.
+Color _legibleOnDark(Color base) =>
+    Color.lerp(base, const Color(0xFFFFFFFF), 0.35)!;

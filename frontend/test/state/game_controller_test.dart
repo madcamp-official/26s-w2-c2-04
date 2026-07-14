@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:signalr_netcore/signalr_client.dart';
 import 'package:splendor_multiplayer/models/game_hub_event.dart';
+import 'package:splendor_multiplayer/models/game_presence_event.dart';
 import 'package:splendor_multiplayer/models/game_state.dart';
 import 'package:splendor_multiplayer/models/gameroom.dart';
 import 'package:splendor_multiplayer/models/player.dart';
@@ -12,6 +13,7 @@ import 'package:splendor_multiplayer/state/game_controller.dart';
 
 class _FakeGameSocket implements GameSocket {
   final _controller = StreamController<GameHubEvent>.broadcast();
+  final _presenceController = StreamController<GamePresenceEvent>.broadcast();
   final List<String> calls = [];
 
   /// 이미 진행 중인 방에 연결할 때, 서버가 StateSync를 connect() 응답보다 먼저
@@ -20,6 +22,11 @@ class _FakeGameSocket implements GameSocket {
 
   @override
   Stream<GameHubEvent> get events => _controller.stream;
+
+  @override
+  Stream<GamePresenceEvent> get presenceEvents => _presenceController.stream;
+
+  void emitPresence(GamePresenceEvent event) => _presenceController.add(event);
 
   @override
   HubConnectionState? get connectionState => HubConnectionState.Connected;
@@ -72,7 +79,10 @@ class _FakeGameSocket implements GameSocket {
       calls.add('requestResync');
 
   @override
-  Future<void> dispose() async => _controller.close();
+  Future<void> dispose() async {
+    await _controller.close();
+    await _presenceController.close();
+  }
 
   void emit(GameHubEvent event) => _controller.add(event);
 }
@@ -168,6 +178,26 @@ void main() {
     socket.emit(const GameHubEvent.playerReadyChanged(userId: 2, ready: false));
     await Future<void>.delayed(Duration.zero);
     expect((controller.state as GameWaitingRoom).readyPlayerIds, isEmpty);
+  });
+
+  test('PlayerDisconnected 이벤트가 오면 상대 닉네임을 담은 안내를 띄운다', () async {
+    await controller.connect(
+      roomId: 5566,
+      accessToken: 'token',
+      initialPlayers: const [
+        Player(id: 1024, nickname: '나'),
+        Player(id: 2, nickname: '상대'),
+      ],
+    );
+    socket.emit(GameHubEvent.stateSync(state: _fullState(), sequence: 1));
+    await Future<void>.delayed(Duration.zero);
+
+    socket.emitPresence(const PlayerDisconnectedEvent(2, 60));
+    await Future<void>.delayed(Duration.zero);
+
+    final state = controller.state as GameConnected;
+    expect(state.notice, contains('상대'));
+    expect(state.notice, contains('연결이 끊'));
   });
 
   test(
