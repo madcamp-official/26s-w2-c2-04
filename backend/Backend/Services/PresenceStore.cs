@@ -43,6 +43,13 @@ public class PresenceStore(IConnectionMultiplexer redis)
         return true;
     }
 
+    /// <summary>이 유저가 지금 SocialHub에 연결되어 있는지(=실제로 접속 중인지) 여부. 로그인 시 동시접속 차단에 쓰인다.</summary>
+    public async Task<bool> IsSocialOnlineAsync(int userId)
+    {
+        var value = await _db.HashGetAsync(SocialOnlineHashKey, userId);
+        return !value.IsNullOrEmpty && (long)value > 0;
+    }
+
     public async Task<HashSet<int>> GetOnlineAsync(IEnumerable<int> userIds)
     {
         var ids = userIds.Distinct().ToArray();

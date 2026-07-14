@@ -63,7 +63,8 @@ public static class AuthEndpoints
             LoginRequest request,
             AppDbContext db,
             IPasswordHasher<User> hasher,
-            ITokenService tokenService) =>
+            ITokenService tokenService,
+            PresenceStore presence) =>
         {
             if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
                 return Results.BadRequest(new { code = "INVALID_PAYLOAD", message = "email, password는 필수입니다." });
@@ -76,21 +77,24 @@ public static class AuthEndpoints
             if (hasher.VerifyHashedPassword(user, user.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
                 return Results.Unauthorized();
 
+            if (await presence.IsSocialOnlineAsync(user.Id))
+                return Results.Conflict(new { code = "ALREADY_LOGGED_IN", message = "이미 다른 기기/브라우저에서 로그인 중입니다." });
+
             var response = await IssueEmailAuthAsync(user, db, tokenService);
             return Results.Ok(response);
         })
             .WithName("Login");
 
-        group.MapPost("/oauth/kakao", (KakaoOAuthRequest request, AppDbContext db, OAuthProviderResolver resolver, ITokenService tokenService) =>
-            HandleOAuthLoginAsync(resolver.Resolve("kakao")!, request.KakaoAccessToken, db, tokenService))
+        group.MapPost("/oauth/kakao", (KakaoOAuthRequest request, AppDbContext db, OAuthProviderResolver resolver, ITokenService tokenService, PresenceStore presence) =>
+            HandleOAuthLoginAsync(resolver.Resolve("kakao")!, request.KakaoAccessToken, db, tokenService, presence))
             .WithName("OAuthKakao");
 
-        group.MapPost("/oauth/naver", (NaverOAuthRequest request, AppDbContext db, OAuthProviderResolver resolver, ITokenService tokenService) =>
-            HandleOAuthLoginAsync(resolver.Resolve("naver")!, request.NaverAccessToken, db, tokenService))
+        group.MapPost("/oauth/naver", (NaverOAuthRequest request, AppDbContext db, OAuthProviderResolver resolver, ITokenService tokenService, PresenceStore presence) =>
+            HandleOAuthLoginAsync(resolver.Resolve("naver")!, request.NaverAccessToken, db, tokenService, presence))
             .WithName("OAuthNaver");
 
-        group.MapPost("/oauth/google", (GoogleOAuthRequest request, AppDbContext db, OAuthProviderResolver resolver, ITokenService tokenService) =>
-            HandleOAuthLoginAsync(resolver.Resolve("google")!, request.IdToken, db, tokenService))
+        group.MapPost("/oauth/google", (GoogleOAuthRequest request, AppDbContext db, OAuthProviderResolver resolver, ITokenService tokenService, PresenceStore presence) =>
+            HandleOAuthLoginAsync(resolver.Resolve("google")!, request.IdToken, db, tokenService, presence))
             .WithName("OAuthGoogle");
 
         group.MapPost("/link/{provider}", async (
@@ -216,7 +220,8 @@ public static class AuthEndpoints
         IOAuthProvider oauthProvider,
         string providerToken,
         AppDbContext db,
-        ITokenService tokenService)
+        ITokenService tokenService,
+        PresenceStore presence)
     {
         var info = await oauthProvider.GetUserInfoAsync(providerToken, CancellationToken.None);
         if (info is null)
@@ -231,6 +236,8 @@ public static class AuthEndpoints
         if (existingLogin is not null)
         {
             user = existingLogin.User;
+            if (await presence.IsSocialOnlineAsync(user.Id))
+                return Results.Conflict(new { code = "ALREADY_LOGGED_IN", message = "이미 다른 기기/브라우저에서 로그인 중입니다." });
         }
         else
         {
