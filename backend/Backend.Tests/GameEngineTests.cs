@@ -355,4 +355,99 @@ public class GameEngineTests
 
         Assert.Equal(2, state.LastTurnPlayerId);
     }
+
+    [Fact]
+    public void Initialize_SeedsTurnTimerForAllPlayers()
+    {
+        var state = GameEngine.Initialize([1, 2, 3], new Random(42));
+
+        Assert.Equal(30, state.TimeBankSeconds[1]);
+        Assert.Equal(30, state.TimeBankSeconds[2]);
+        Assert.Equal(30, state.TimeBankSeconds[3]);
+        Assert.NotNull(state.TurnDeadlineUtc);
+        Assert.True(state.TurnDeadlineUtc > DateTime.UtcNow.AddSeconds(25));
+    }
+
+    [Fact]
+    public void TakeTokens_EndingTurnEarly_BankIncrementIsCappedAt30()
+    {
+        var state = CreateState(1, 2);
+        state.TimeBankSeconds[1] = 20;
+        state.TurnDeadlineUtc = DateTime.UtcNow.AddSeconds(100); // 아직 넉넉히 남아있다고 가정
+
+        GameEngine.TakeTokens(state, 1, new Dictionary<GemType, int>
+        {
+            [GemType.Diamond] = 1,
+            [GemType.Sapphire] = 1,
+            [GemType.Emerald] = 1,
+        });
+
+        Assert.Equal(30, state.TimeBankSeconds[1]); // remaining(~100)+10 이지만 30으로 캡
+    }
+
+    [Fact]
+    public void ResolveTimeout_AdvancesTurnAndGrantsTenSecondBank()
+    {
+        var state = CreateState(1, 2);
+        state.TimeBankSeconds[1] = 30;
+        state.TimeBankSeconds[2] = 30;
+        state.TurnDeadlineUtc = DateTime.UtcNow.AddSeconds(-1); // 이미 마감 지남
+
+        var outcome = GameEngine.ResolveTimeout(state, 1);
+
+        Assert.True(outcome.TimedOut);
+        Assert.False(outcome.GameOver);
+        Assert.Equal(2, state.CurrentPlayerId);
+        Assert.Equal(10, state.TimeBankSeconds[1]); // 0(이미 지남) + 10
+        Assert.NotNull(state.TurnDeadlineUtc);
+    }
+
+    [Fact]
+    public void ResolveTimeout_WhilePendingNobleChoice_ForfeitsAndUnblocksNextPlayer()
+    {
+        var state = CreateState(1, 2);
+        state.BoardNobles.Add(new Noble("N1", 3, new Dictionary<GemType, int> { [GemType.Diamond] = 1 }));
+        state.BoardNobles.Add(new Noble("N2", 3, new Dictionary<GemType, int> { [GemType.Diamond] = 1 }));
+        state.Board[1].Add(new Card("c1", 1, 0, GemType.Diamond, new Dictionary<GemType, int>()));
+        GameEngine.PurchaseCard(state, 1, "c1", "Board");
+        Assert.Equal(2, state.PendingNobleChoiceIds.Count);
+        Assert.Equal(1, state.CurrentPlayerId); // 노블 선택 대기라 아직 1번 턴
+
+        GameEngine.ResolveTimeout(state, 1);
+
+        Assert.Empty(state.PendingNobleChoiceIds);
+        Assert.Equal(2, state.CurrentPlayerId);
+
+        // 전역 잠금(EnsureNoPendingNobleChoice)이 풀려서 2번이 정상적으로 행동할 수 있어야 한다.
+        var outcome = GameEngine.TakeTokens(state, 2, new Dictionary<GemType, int>
+        {
+            [GemType.Sapphire] = 1,
+            [GemType.Emerald] = 1,
+            [GemType.Ruby] = 1,
+        });
+        Assert.False(outcome.GameOver);
+    }
+
+    [Fact]
+    public void ResolveTimeout_NotCurrentPlayer_ThrowsNotYourTurn()
+    {
+        var state = CreateState(1, 2);
+
+        var ex = Assert.Throws<GameRuleException>(() => GameEngine.ResolveTimeout(state, 2));
+        Assert.Equal("NOT_YOUR_TURN", ex.Code);
+    }
+
+    [Fact]
+    public void ResolveTimeout_WithExcessTokens_StillAdvancesTurnUnconditionally()
+    {
+        var state = CreateState(1, 2);
+        state.Players[1].Tokens[GemType.Diamond] = 4;
+        state.Players[1].Tokens[GemType.Sapphire] = 4;
+        state.Players[1].Tokens[GemType.Emerald] = 3; // 11개, 원래는 반납이 필요한 상태
+
+        GameEngine.ResolveTimeout(state, 1);
+
+        Assert.Equal(2, state.CurrentPlayerId);
+        Assert.Equal(11, state.Players[1].TotalTokens); // 자동 반납 없이 그대로 유지
+    }
 }

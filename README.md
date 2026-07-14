@@ -157,7 +157,7 @@
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
-| GET | `/games/{gameId}/state` | 게임 상태 스냅샷 조회 | 없음 | GameState 객체(10.1 스키마 참고, 예: `{"gameId": "g_9911", "phase": "PLAYING", "currentPlayerId": "u_1024", "sequence": 42, ...}`) | 관전/디버깅/재접속 폴백용 |
+| GET | `/games/{gameId}/state` | 게임 상태 스냅샷 조회 | 없음 | GameState 객체(10.1 스키마 참고, 예: `{"gameId": "g_9911", "phase": "PLAYING", "currentPlayerId": "u_1024", "sequence": 42, "timeBankSeconds": {"u_1024": 24, "u_2048": 30}, "turnDeadlineUtc": "2026-07-14T09:21:12Z", ...}`) | 관전/디버깅/재접속 폴백용. **[변경]** `timeBankSeconds`/`turnDeadlineUtc` 필드 추가(아래 7-1. 턴 제한시간 참고) |
 | GET | `/replay/{gameId}` | 게임 리플레이 조회 | 없음 | `{"actions": [{"turnNumber": 3, "playerId": "u_1024", "actionType": "TAKE_TOKENS", "actionPayload": {"gems": ["diamond", "sapphire", "emerald"], "currentState": [게임 상태 모두 포함]}], "actionsTotal": 48}` | 리플레이용 |
 
 ---
@@ -187,6 +187,18 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
 | INVOKE | `SendEmote` | 감정표현(이모티콘) 전송 | `{"emoteId": "emote_thumbsup"}` | 없음(브로드캐스트 `EmoteReceived`) | 친구 제한 없이 방 전체에 브로드캐스트. `emoteId` 목록은 10.4 참고 |
 | INVOKE | `RequestResync` | 재접속 시 상태 재동기화 | `lastSequence`: `128` (int) | 호출자에게만 `StateSync`(full 또는 delta) 콜백 | 재연결(`onreconnected`) 직후 호출 |
 
+### 7-1. 턴 제한시간 (피셔 룰) **[신규]**
+
+한 턴의 제한시간은 피셔 룰로 관리된다. 클라이언트가 별도로 호출할 API는 없다 — 서버가 마감을 감지해 자동으로 처리하고, 결과는 기존 `StateSync`/`TurnChanged`로 통지된다.
+
+- 각 플레이어는 `timeBankSeconds`(초)를 가지며 초기값 30초, **항상 최대 30초로 캡**된다.
+- 자기 턴이 시작되면 서버가 `turnDeadlineUtc`(해당 턴이 끝나는 UTC 시각)를 계산해 `GameState`(`StateSync`)에 실어 보낸다. 클라이언트는 이 값과 로컬 시계로 카운트다운만 표시하면 된다(서버가 authoritative).
+- 턴이 끝나는 시점(정상 행동 완료 또는 타임아웃) 공통 공식: `newBank = min(30, remainingAtTurnEnd + 10)`.
+- **제한시간 안에 행동하지 못하면 서버가 무조건 턴을 다음 플레이어에게 넘긴다** (별도 클라이언트 요청 불필요). 이때:
+  - 귀족 선택 대기 중이었다면 선택을 포기 처리(귀족은 보드에 남아 다음 기회에 재평가됨).
+  - 토큰 10개 초과 보유 상태였다면 그대로 유지되며, 반납은 다음 자기 턴에 처리해야 한다(그 전까지 `DiscardTokens` 외 다른 액션은 불가).
+  - 결과는 `StateSync`와 `TurnChanged`(`reason: "timeout"`)로 방 전체에 브로드캐스트된다.
+
 ---
 ## 8. GameHub 콜백 (Server → Client, Flutter `hubConnection.on()`)
 
@@ -194,9 +206,9 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
-| ON | `StateSync` | 게임 상태 동기화 | - | `{"type": "delta", "state": null, "patch": [{"op": "replace", "path": "/players/0/gems/diamond", "value": 2}], "sequence": 129}` (full일 때는 `state`에 GameState 전체, `patch`는 null) | `patch`는 JSON Patch(RFC6902) |
+| ON | `StateSync` | 게임 상태 동기화 | - | `{"type": "delta", "state": null, "patch": [{"op": "replace", "path": "/players/0/gems/diamond", "value": 2}], "sequence": 129}` (full일 때는 `state`에 GameState 전체, `patch`는 null) | `patch`는 JSON Patch(RFC6902). **[변경]** full sync의 `state`에 `timeBankSeconds`(플레이어별 다음 턴 예산, 초, ≤30)/`turnDeadlineUtc`(현재 턴 마감 UTC 시각, 게임 종료 시 null) 필드 추가(7-1 참고) |
 | ON | `ActionResult` | 직전 호출 처리 결과 | - | `{"success": true, "error": null, "patch": [{"op": "replace", "path": "/players/0/score", "value": 5}]}` | 대부분 `StateSync` delta로 대체 가능(선택 구현) |
-| ON | `TurnChanged` | 턴 전환 알림 | - | `{"currentPlayerId": "u_2048", "turnNumber": 4}` | |
+| ON | `TurnChanged` | 턴 전환 알림 | - | `{"currentPlayerId": "u_2048", "turnNumber": 4, "reason": "action"}` (`reason`은 `action`\|`timeout`) | **[변경]** `reason` 필드 추가 — `timeout`이면 제한시간 초과로 서버가 자동으로 턴을 넘긴 경우(7-1 참고), UI에서 별도 안내 문구 표시용 |
 | ON | `NobleAwarded` | 귀족 타일 자동 획득 | - | `{"playerId": "u_1024", "nobleId": "n_04"}` | |
 | ON | `NobleChoiceRequired` | 귀족 동시 충족, 선택 필요 | - | `{"playerId": "u_1024", "candidateNobleIds": ["n_04", "n_07"]}` | `ClaimNoble` 호출 유도 |
 | ON | `PlayerJoined` | 방 인원 입장 | - | `{"userId": "u_2048", "nickname": "김도현"}` | |

@@ -13,10 +13,15 @@ public record ActionOutcome(
     IReadOnlyList<string> NobleChoiceCandidateIds,
     bool GameOver,
     int? WinnerId,
-    IReadOnlyList<PlayerScore>? FinalScores);
+    IReadOnlyList<PlayerScore>? FinalScores,
+    bool TimedOut = false);
 
 public static class GameEngine
 {
+    // 피셔 룰 턴 타이머: 뱅크는 항상 30초로 캡되고, 턴이 끝날 때마다(정상 종료든 타임아웃이든) 10초 증가.
+    private const int MaxTurnBankSeconds = 30;
+    private const int TurnIncrementSeconds = 10;
+
     public static GameState Initialize(IReadOnlyList<int> playerIds, Random? random = null)
     {
         if (playerIds.Count is < 2 or > 4)
@@ -49,6 +54,10 @@ public static class GameEngine
 
         var allNobles = CardData.GenerateNobles().OrderBy(_ => random.Next()).ToList();
         state.BoardNobles = allNobles.Take(playerIds.Count + 1).ToList();
+
+        foreach (var playerId in playerIds)
+            state.TimeBankSeconds[playerId] = MaxTurnBankSeconds;
+        state.TurnDeadlineUtc = DateTime.UtcNow.AddSeconds(MaxTurnBankSeconds);
 
         return state;
     }
@@ -237,6 +246,29 @@ public static class GameEngine
     }
 
     /// <summary>
+    /// 턴 제한시간 초과 시 서버가 대신 호출하는 무조건 패스. 노블 선택 대기 중이었다면
+    /// 포기 처리(PendingNobleChoiceIds는 전역 상태라 안 지우면 다음 플레이어까지 막히므로 필수)하고,
+    /// 그 외에는 아무 것도 확인/자동 수행하지 않고 무조건 다음 플레이어에게 턴을 넘긴다.
+    /// 토큰 10개 초과 보유 상태는 그대로 둔다 — 플레이어별 체크(EnsureNotAwaitingDiscard)라
+    /// 다른 사람의 턴을 막지 않고, 본인은 다음 자기 턴에 DiscardTokens 외엔 행동할 수 없어 자연히 유도된다.
+    /// </summary>
+    public static ActionOutcome ResolveTimeout(GameState state, int playerId)
+    {
+        if (state.CurrentPlayerId != playerId)
+            throw new GameRuleException("NOT_YOUR_TURN", "이미 턴이 넘어갔습니다.");
+
+        state.PendingNobleChoiceIds = [];
+        state.Sequence++;
+
+        var gameOver = AdvanceTurnAndResetClock(state, playerId);
+        if (!gameOver)
+            return new ActionOutcome(false, [], [], false, null, null, TimedOut: true);
+
+        var (winnerId, scores) = FinishGame(state);
+        return new ActionOutcome(false, [], [], true, winnerId, scores, TimedOut: true);
+    }
+
+    /// <summary>
     /// 부분 탈주(2명 이상 남는 경우) 확정 시 그 플레이어를 게임에서 완전히 제거한다.
     /// 남은 인원이 1명 이하가 되는 경우는 호출부(RoomDepartureService)가 별도로
     /// 게임 강제 종료 경로를 타므로 이 메서드를 쓰지 않는다.
@@ -266,6 +298,15 @@ public static class GameEngine
         }
         state.CurrentPlayerIndex = state.PlayerOrder.IndexOf(nextPlayerId);
         state.Sequence++;
+
+        if (wasCurrentPlayer)
+        {
+            // 나간 사람은 뱅크 증가 대상이 아니므로(턴을 정상적으로 끝낸 게 아님) 그냥 지우고,
+            // 다음 플레이어의 기존 뱅크로 새 데드라인만 세팅한다.
+            state.TimeBankSeconds.Remove(playerId);
+            state.TurnDeadlineUtc = DateTime.UtcNow.AddSeconds(
+                state.TimeBankSeconds.GetValueOrDefault(state.CurrentPlayerId, MaxTurnBankSeconds));
+        }
         return true;
     }
 
@@ -334,6 +375,25 @@ public static class GameEngine
         return false;
     }
 
+    /// <summary>
+    /// AdvanceTurn을 감싸서 피셔 룰 타이머(뱅크 증가 + 캡, 다음 턴 데드라인)까지 같이 갱신한다.
+    /// FinalizeTurn과 ResolveTimeout이 공유하는 유일한 턴-전환 경로.
+    /// </summary>
+    private static bool AdvanceTurnAndResetClock(GameState state, int endingPlayerId)
+    {
+        if (state.TurnDeadlineUtc is { } deadline && state.TimeBankSeconds.ContainsKey(endingPlayerId))
+        {
+            var remaining = Math.Max(0, (deadline - DateTime.UtcNow).TotalSeconds);
+            state.TimeBankSeconds[endingPlayerId] = (int)Math.Min(MaxTurnBankSeconds, remaining + TurnIncrementSeconds);
+        }
+
+        var gameOver = AdvanceTurn(state);
+        state.TurnDeadlineUtc = gameOver
+            ? null
+            : DateTime.UtcNow.AddSeconds(state.TimeBankSeconds.GetValueOrDefault(state.CurrentPlayerId, MaxTurnBankSeconds));
+        return gameOver;
+    }
+
     private static (int WinnerId, IReadOnlyList<PlayerScore> Scores) FinishGame(GameState state)
     {
         var ranked = state.Players.Values
@@ -366,7 +426,7 @@ public static class GameEngine
         if (holdForNobleChoice || player.TotalTokens > 10)
             return new ActionOutcome(finalRoundTriggered, autoAwardedNobleIds, nobleChoiceCandidateIds, false, null, null);
 
-        var gameOver = AdvanceTurn(state);
+        var gameOver = AdvanceTurnAndResetClock(state, player.UserId);
         if (!gameOver)
             return new ActionOutcome(finalRoundTriggered, autoAwardedNobleIds, nobleChoiceCandidateIds, false, null, null);
 
