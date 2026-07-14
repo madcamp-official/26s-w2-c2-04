@@ -67,16 +67,12 @@ class SocialSocketService implements SocialSocket {
 
   @override
   Future<void> sendFriendMessage({required int toUserId, required String text}) async {
-    await _hubConnection?.invoke('SendFriendMessage', args: [
-      {'toUserId': toUserId, 'text': text},
-    ]);
+    await _hubConnection?.invoke('SendFriendMessage', args: [toUserId, text]);
   }
 
   @override
   Future<void> setPresence(String status) async {
-    await _hubConnection?.invoke('SetPresence', args: [
-      {'status': status},
-    ]);
+    await _hubConnection?.invoke('SetPresence', args: [status]);
   }
 
   @override

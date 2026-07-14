@@ -1,7 +1,7 @@
-// GET /users/{userId} 응답을 파싱하는 모델.
-// 이 API는 아직 백엔드에 구현되어 있지 않습니다(backend/Backend/Endpoints에는
-// Auth/Room/Matchmaking/Leaderboard만 존재). README 2절(유저 API) 스펙을 그대로
-// 따라 프런트 쪽을 먼저 완성해두고, 백엔드가 나오면 여기 필드만 맞추면 됩니다.
+// GET /profile/me, GET /profile/{userId} 응답을 파싱하는 모델.
+// backend/Backend/Dtos/ProfileDtos.cs의 ProfileResponse/RankingSummaryResponse/
+// RecentMatchResponse를 그대로 반영합니다(전적/스탯이 프로필 응답 하나에 모두
+// 들어있고, 별도의 /users/{id}/stats 같은 엔드포인트는 없습니다).
 
 // ignore_for_file: invalid_annotation_target
 import 'package:freezed_annotation/freezed_annotation.dart';
@@ -9,13 +9,14 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'user_profile.freezed.dart';
 part 'user_profile.g.dart';
 
-/// 인원수(2/3/4)별 랭킹전 MMR·순위 요약. rankings 맵의 값으로 쓰입니다.
+/// 인원수(2/3/4)별 랭킹전 MMR·순위 요약.
 @freezed
 class RankingSummary with _$RankingSummary {
   const factory RankingSummary({
+    required int playerCount,
     required int rank,
     required int mmr,
-    required int gamesPlayedSeason,
+    required int gamesPlayed,
     required double avgPlace,
   }) = _RankingSummary;
 
@@ -24,16 +25,18 @@ class RankingSummary with _$RankingSummary {
 }
 
 @freezed
-class RecentGame with _$RecentGame {
-  const factory RecentGame({
+class RecentMatch with _$RecentMatch {
+  const factory RecentMatch({
     required int gameId,
-    required int playersNumber,
-    required String gameType, // "Ranked" | "Unranked"
+    required int playerCount,
     required int place,
-  }) = _RecentGame;
+    required int score,
+    required bool isRanked,
+    required DateTime playedAt,
+  }) = _RecentMatch;
 
-  factory RecentGame.fromJson(Map<String, dynamic> json) =>
-      _$RecentGameFromJson(json);
+  factory RecentMatch.fromJson(Map<String, dynamic> json) =>
+      _$RecentMatchFromJson(json);
 }
 
 @freezed
@@ -42,10 +45,10 @@ class UserProfile with _$UserProfile {
     required int userId,
     required String nickname,
     String? avatarUrl,
-    required DateTime createdAt,
-    @Default([]) List<RecentGame> recentGames,
-    // key: 인원수 문자열("2"|"3"|"4")
-    @Default({}) Map<String, RankingSummary> rankings,
+    @Default(0) int totalGamesPlayed,
+    @Default(0) double overallAvgPlace,
+    @Default([]) List<RankingSummary> rankings,
+    @Default([]) List<RecentMatch> recentMatches,
   }) = _UserProfile;
 
   factory UserProfile.fromJson(Map<String, dynamic> json) =>

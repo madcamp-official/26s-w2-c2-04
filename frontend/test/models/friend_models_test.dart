@@ -21,17 +21,17 @@ void main() {
   });
 
   group('FriendRequest', () {
-    test('POST /friends/requests 응답을 파싱한다', () {
+    test('GET/POST /friends/requests 응답(FriendRequestResponse)을 파싱한다', () {
       final request = FriendRequest.fromJson({
         'requestId': 7788,
-        'fromUserId': 1024,
-        'toUserId': 2048,
-        'status': 'PENDING',
+        'userId': 1024,
+        'nickname': '은빛상인',
         'createdAt': '2026-07-10T09:05:00Z',
       });
 
       expect(request.requestId, 7788);
-      expect(request.status, FriendRequestStatus.pending);
+      expect(request.userId, 1024);
+      expect(request.nickname, '은빛상인');
     });
   });
 }

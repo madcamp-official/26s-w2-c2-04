@@ -92,6 +92,15 @@ class _RoomsScreenState extends ConsumerState<RoomsScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text('OPEN TABLES'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: '새로고침',
+            onPressed: lobbyState is LobbyLoading
+                ? null
+                : () => ref.read(lobbyControllerProvider.notifier).loadRooms(),
+          ),
+        ],
       ),
       body: GemBackdrop(
         child: RefreshIndicator(

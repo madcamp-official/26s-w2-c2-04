@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:signalr_netcore/signalr_client.dart';
 import 'package:splendor_multiplayer/models/game_hub_event.dart';
 import 'package:splendor_multiplayer/models/game_state.dart';
+import 'package:splendor_multiplayer/models/player.dart';
 import 'package:splendor_multiplayer/services/play_service.dart';
 import 'package:splendor_multiplayer/services/socket_service.dart';
 import 'package:splendor_multiplayer/state/game_controller.dart';
@@ -10,6 +11,10 @@ import 'package:splendor_multiplayer/state/game_controller.dart';
 class _FakeGameSocket implements GameSocket {
   final _controller = StreamController<GameHubEvent>.broadcast();
   final List<String> calls = [];
+
+  /// 이미 진행 중인 방에 연결할 때, 서버가 StateSync를 connect() 응답보다 먼저
+  /// 보내는 상황(랭크 매칭 autoConnect)을 재현하기 위한 훅.
+  void Function()? duringConnect;
 
   @override
   Stream<GameHubEvent> get events => _controller.stream;
@@ -23,6 +28,7 @@ class _FakeGameSocket implements GameSocket {
     required String accessToken,
   }) async {
     calls.add('connect($roomId)');
+    duringConnect?.call();
   }
 
   @override
@@ -96,6 +102,24 @@ void main() {
   test('connect는 소켓에 연결을 위임한다', () async {
     await controller.connect(roomId: 5566, accessToken: 'token');
     expect(socket.calls, contains('connect(5566)'));
+  });
+
+  test(
+      'autoConnect 중 StateSync가 GameWaitingRoom 전이보다 먼저 도착해도 '
+      'initialPlayers로 닉네임을 채운다(랭크 매칭 "User {id}" 회귀 방지)', () async {
+    socket.duringConnect = () {
+      socket.emit(GameHubEvent.stateSync(state: _fullState(), sequence: 1));
+    };
+
+    await controller.connect(
+      roomId: 5566,
+      accessToken: 'token',
+      initialPlayers: const [Player(id: 1024, nickname: '스플랜더왕')],
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    final state = controller.state as GameConnected;
+    expect(state.players.single.nickname, '스플랜더왕');
   });
 
   test('StateSync(full)를 받으면 GameConnected로 전환된다', () async {

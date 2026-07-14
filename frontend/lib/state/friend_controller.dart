@@ -7,10 +7,9 @@ import '../models/friend.dart';
 import '../models/friend_request.dart';
 import '../models/player.dart';
 import '../models/social_hub_event.dart';
+import '../services/friend_message_service.dart';
 import '../services/friend_service.dart';
 import '../services/social_socket_service.dart';
-import '../services/user_service.dart';
-import 'profile_controller.dart' show userServiceProvider;
 
 class FriendChatMessage {
   final String text;
@@ -70,12 +69,13 @@ class FriendsError extends FriendsState {
 }
 
 final friendServiceProvider = Provider((ref) => FriendService());
+final friendMessageServiceProvider = Provider((ref) => FriendMessageService());
 
 final friendControllerProvider =
     StateNotifierProvider.autoDispose<FriendController, FriendsState>((ref) {
   final controller = FriendController(
     ref.read(friendServiceProvider),
-    ref.read(userServiceProvider),
+    ref.read(friendMessageServiceProvider),
     ref.read(socialSocketProvider),
   );
   ref.onDispose(controller.disposeSocket);
@@ -84,11 +84,11 @@ final friendControllerProvider =
 
 class FriendController extends StateNotifier<FriendsState> {
   final FriendService _friendService;
-  final UserService _userService;
+  final FriendMessageService _messageService;
   final SocialSocket _socket;
   StreamSubscription<SocialHubEvent>? _sub;
 
-  FriendController(this._friendService, this._userService, this._socket)
+  FriendController(this._friendService, this._messageService, this._socket)
       : super(const FriendsInitial());
 
   /// SocialHub 연결은 로그인 상태가 유지되는 동안 AuthController가 앱 전역
@@ -99,7 +99,7 @@ class FriendController extends StateNotifier<FriendsState> {
     state = const FriendsLoading();
     try {
       final friends = await _friendService.getFriends();
-      final requests = await _friendService.getRequests();
+      final requests = await _friendService.getIncomingRequests();
       state = FriendsLoaded(friends: friends, incomingRequests: requests);
 
       _sub?.cancel();
@@ -116,8 +116,8 @@ class FriendController extends StateNotifier<FriendsState> {
           ...s.incomingRequests,
           FriendRequest(
             requestId: requestId,
-            fromUserId: fromUserId,
-            fromNickname: fromNickname,
+            userId: fromUserId,
+            nickname: fromNickname,
             createdAt: DateTime.now(),
           ),
         ]),
@@ -144,7 +144,13 @@ class FriendController extends StateNotifier<FriendsState> {
   }
 
   Future<void> sendFriendRequest(int targetUserId) async {
-    await _friendService.sendRequest(targetUserId);
+    final result = await _friendService.sendRequest(targetUserId);
+    // 상대가 이미 나에게 요청을 보내둔 상태였다면 서버가 즉시 수락 처리한다 —
+    // 이 경우 SocialHub 푸시는 "원래 요청을 보낸 사람"에게만 가므로(내가 아님),
+    // 내 화면에서 friends 목록에 반영하려면 이 응답을 직접 써야 한다.
+    if (result is FriendRequestAutoAccepted) {
+      _updateLoaded((s) => s.copyWith(friends: [...s.friends, result.friend]));
+    }
   }
 
   Future<void> acceptRequest(FriendRequest request) async {
@@ -176,8 +182,28 @@ class FriendController extends StateNotifier<FriendsState> {
       _updateLoaded((s) => s.copyWith(searchResults: []));
       return;
     }
-    final results = await _userService.search(nickname);
+    final results = await _friendService.searchCandidates(nickname);
     _updateLoaded((s) => s.copyWith(searchResults: results));
+  }
+
+  /// 친구 대화창을 열 때 영구 저장된 이전 대화를 불러온다(GET
+  /// /friends/{userId}/messages). 실시간 송수신은 SocialHub가 계속 처리하므로
+  /// 여기서는 화면 진입 시 한 번 과거 이력만 채워 넣는다.
+  Future<void> loadHistory(int peerUserId, {required int myUserId}) async {
+    try {
+      final page = await _messageService.getMessages(peerUserId);
+      final messages = [
+        for (final m in page.messages)
+          FriendChatMessage(text: m.body, ts: m.createdAt, mine: m.senderId == myUserId),
+      ];
+      _updateLoaded((s) {
+        final history = Map<int, List<FriendChatMessage>>.from(s.chatHistory);
+        history[peerUserId] = messages;
+        return s.copyWith(chatHistory: history);
+      });
+    } catch (_) {
+      // 이력 로딩 실패는 조용히 무시한다 — 실시간 송수신 자체는 계속 동작한다.
+    }
   }
 
   Future<void> sendChatMessage(int toUserId, String text) async {

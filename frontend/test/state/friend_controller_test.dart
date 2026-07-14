@@ -1,19 +1,23 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:splendor_multiplayer/models/friend.dart';
+import 'package:splendor_multiplayer/models/friend_message.dart';
 import 'package:splendor_multiplayer/models/friend_request.dart';
 import 'package:splendor_multiplayer/models/player.dart';
 import 'package:splendor_multiplayer/models/social_hub_event.dart';
+import 'package:splendor_multiplayer/services/friend_message_service.dart';
 import 'package:splendor_multiplayer/services/friend_service.dart';
 import 'package:splendor_multiplayer/services/social_socket_service.dart';
-import 'package:splendor_multiplayer/services/user_service.dart';
 import 'package:splendor_multiplayer/state/friend_controller.dart';
 
 class _FakeFriendService implements FriendService {
   final List<String> calls = [];
+  SendFriendRequestResult sendRequestResult = FriendRequestSent(
+    FriendRequest(requestId: 999, userId: 1024, nickname: '상인', createdAt: DateTime.utc(2026, 7, 10)),
+  );
 
   @override
-  Future<List<Friend>> getFriends({FriendStatus? status}) async {
+  Future<List<Friend>> getFriends() async {
     calls.add('getFriends');
     return [
       const Friend(userId: 1, nickname: '루비사냥꾼', status: FriendStatus.inGame),
@@ -22,25 +26,21 @@ class _FakeFriendService implements FriendService {
   }
 
   @override
-  Future<List<FriendRequest>> getRequests({String direction = 'incoming'}) async {
+  Future<List<FriendRequest>> getIncomingRequests() async {
     return [
       FriendRequest(
         requestId: 7788,
-        fromUserId: 3,
-        fromNickname: '은빛상인',
+        userId: 3,
+        nickname: '은빛상인',
         createdAt: DateTime.utc(2026, 7, 10),
       ),
     ];
   }
 
   @override
-  Future<FriendRequest> sendRequest(int targetUserId) async {
+  Future<SendFriendRequestResult> sendRequest(int targetUserId) async {
     calls.add('sendRequest($targetUserId)');
-    return FriendRequest(
-      requestId: 999,
-      fromUserId: 1024,
-      createdAt: DateTime.utc(2026, 7, 10),
-    );
+    return sendRequestResult;
   }
 
   @override
@@ -52,15 +52,17 @@ class _FakeFriendService implements FriendService {
 
   @override
   Future<void> deleteFriend(int friendUserId) async {}
+
+  @override
+  Future<List<Player>> searchCandidates(String query) async =>
+      [const Player(id: 5, nickname: '검색된유저')];
 }
 
-class _FakeUserService implements UserService {
-  @override
-  Future<List<Player>> search(String nickname) async =>
-      [const Player(id: 5, nickname: '검색된유저')];
+class _FakeFriendMessageService implements FriendMessageService {
+  FriendMessagePage page = const FriendMessagePage(messages: [], hasMore: false);
 
   @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  Future<FriendMessagePage> getMessages(int peerUserId, {int? beforeId, int? limit}) async => page;
 }
 
 class _FakeSocialSocket implements SocialSocket {
@@ -91,26 +93,26 @@ class _FakeSocialSocket implements SocialSocket {
 
 void main() {
   late _FakeFriendService friendService;
+  late _FakeFriendMessageService messageService;
   late _FakeSocialSocket socket;
   late FriendController controller;
 
   setUp(() {
     friendService = _FakeFriendService();
+    messageService = _FakeFriendMessageService();
     socket = _FakeSocialSocket();
-    controller = FriendController(friendService, _FakeUserService(), socket);
+    controller = FriendController(friendService, messageService, socket);
   });
 
-  test('load는 친구/요청 목록을 불러오고 이미 연결된 SocialHub 이벤트를 구독한다', () async {
+  test('load는 친구/받은 요청 목록을 불러오고 이미 연결된 SocialHub 이벤트를 구독한다', () async {
     await controller.load();
 
     final state = controller.state as FriendsLoaded;
     expect(state.friends, hasLength(2));
-    expect(state.incomingRequests.single.fromNickname, '은빛상인');
+    expect(state.incomingRequests.single.nickname, '은빛상인');
     expect(state.online.single.nickname, '루비사냥꾼');
     expect(state.offline.single.nickname, '도시의상인');
-    // SocialHub 연결/해제는 이제 AuthController 책임이라 load()는 connect를
-    // 부르지 않는다 — FriendStatusChanged 등 이벤트가 잘 도착하는지는 아래
-    // 다른 테스트들이 구독이 실제로 걸렸는지로 검증한다.
+    // SocialHub 연결/해제는 AuthController 책임이라 load()는 connect를 부르지 않는다.
     expect(socket.calls, isNot(contains('connect')));
   });
 
@@ -152,6 +154,28 @@ void main() {
     expect(state.chatHistory[1]!.single.mine, isTrue);
   });
 
+  test('loadHistory는 영구 저장된 이전 대화를 불러와 chatHistory를 채운다', () async {
+    await controller.load();
+    messageService.page = FriendMessagePage(
+      messages: [
+        FriendMessage(
+          messageId: 1,
+          senderId: 2,
+          receiverId: 1024,
+          body: '지난 메시지',
+          createdAt: DateTime.utc(2026, 7, 9),
+        ),
+      ],
+      hasMore: false,
+    );
+
+    await controller.loadHistory(2, myUserId: 1024);
+
+    final state = controller.state as FriendsLoaded;
+    expect(state.chatHistory[2]!.single.text, '지난 메시지');
+    expect(state.chatHistory[2]!.single.mine, isFalse);
+  });
+
   test('acceptRequest는 요청 목록에서 지우고 friends에 추가한다', () async {
     await controller.load();
     final request = (controller.state as FriendsLoaded).incomingRequests.single;
@@ -161,5 +185,17 @@ void main() {
     final state = controller.state as FriendsLoaded;
     expect(state.incomingRequests, isEmpty);
     expect(state.friends.any((f) => f.userId == 3), isTrue);
+  });
+
+  test('sendFriendRequest가 즉시 수락(auto-accept)으로 응답하면 friends에 바로 반영한다', () async {
+    await controller.load();
+    friendService.sendRequestResult = const FriendRequestAutoAccepted(
+      Friend(userId: 9, nickname: '새친구', status: FriendStatus.offline),
+    );
+
+    await controller.sendFriendRequest(9);
+
+    final state = controller.state as FriendsLoaded;
+    expect(state.friends.any((f) => f.userId == 9), isTrue);
   });
 }

@@ -28,7 +28,11 @@ class GameConnecting extends GameControllerState {
 /// PlayerJoined/PlayerLeft로 갱신되는 실시간 참가자 목록을 들고 있습니다.
 class GameWaitingRoom extends GameControllerState {
   final List<Player> players;
-  const GameWaitingRoom(this.players);
+  // 대기실 "준비" 체크를 마친 유저 id 집합. 방장은 이 방 인원(본인 제외) 전원이
+  // 여기 들어와야 시작할 수 있다. 백엔드에 전용 엔드포인트가 없어 GameHub의
+  // 범용 이모트 채널(SendEmote/EmoteReceived)을 준비 신호 용도로 재사용한다.
+  final Set<int> readyPlayerIds;
+  const GameWaitingRoom(this.players, {this.readyPlayerIds = const {}});
 }
 
 class GameConnected extends GameControllerState {
@@ -98,6 +102,12 @@ class GameController extends StateNotifier<GameControllerState> {
   StreamSubscription<GameHubEvent>? _sub;
   int? _roomId;
   int _lastSequence = 0;
+  // connect() 인자로 받은 방 참가자 로스터. 이미 게임이 진행 중인 방에
+  // autoConnect(랭크 매칭)로 들어가면, connect() 도중 StateSync가 GameWaitingRoom
+  // 전이보다 먼저 도착할 수 있다 — 그 경우 _currentRoomPlayers()가 아직 아무
+  // 상태에도 반영되지 않은 이 값을 대신 써야, GameConnected.players가 빈 채로
+  // 굳어 닉네임이 전부 "User {id}"로 보이는 일을 막을 수 있다.
+  List<Player> _initialPlayers = const [];
 
   GameController(this._socket, this._playService)
       : super(const GameDisconnected());
@@ -121,6 +131,7 @@ class GameController extends StateNotifier<GameControllerState> {
 
     state = const GameConnecting();
     _roomId = roomId;
+    _initialPlayers = initialPlayers;
 
     await _sub?.cancel();
     _sub = _socket.events.listen(_onEvent);
@@ -153,7 +164,7 @@ class GameController extends StateNotifier<GameControllerState> {
     final current = state;
     if (current is GameWaitingRoom) return current.players;
     if (current is GameConnected) return current.players;
-    return const [];
+    return _initialPlayers;
   }
 
   void _onEvent(GameHubEvent event) {
@@ -164,12 +175,8 @@ class GameController extends StateNotifier<GameControllerState> {
         if (patch != null) _applyPatch(patch);
         if (!success && error != null) _setNotice('오류: $error');
       },
-      turnChanged: (currentPlayerId, turnNumber) => _mutateGameState(
-        (gs) => gs.copyWith(
-          currentPlayerId: currentPlayerId,
-          turnNumber: turnNumber,
-        ),
-      ),
+      turnChanged: (currentPlayerId, turnNumber, reason) =>
+          _handleTurnChanged(currentPlayerId, turnNumber, reason),
       nobleAwarded: (playerId, nobleId) {
         // 실제 반영은 뒤따르는 StateSync 델타로 이뤄집니다.
       },
@@ -189,9 +196,40 @@ class GameController extends StateNotifier<GameControllerState> {
           chatLog: [...c.chatLog, event as GameHubChatMessage],
         ),
       ),
-      emoteReceived: (playerId, emoteId, ts) {},
+      emoteReceived: (playerId, emoteId, ts) => _handleEmote(playerId, emoteId),
       errorOccurred: (code, message) => _setNotice('오류: $message'),
     );
+  }
+
+  static const _readyOnEmote = '__ready_on__';
+  static const _readyOffEmote = '__ready_off__';
+
+  void _handleEmote(int playerId, String emoteId) {
+    if (emoteId == _readyOnEmote) {
+      _updateReady(playerId, true);
+    } else if (emoteId == _readyOffEmote) {
+      _updateReady(playerId, false);
+    }
+    // 그 외 값은(실제 이모트 기능이 생기면) 여기서 처리하면 된다.
+  }
+
+  void _updateReady(int playerId, bool ready) {
+    final current = state;
+    if (current is! GameWaitingRoom) return;
+    final next = Set<int>.from(current.readyPlayerIds);
+    if (ready) {
+      next.add(playerId);
+    } else {
+      next.remove(playerId);
+    }
+    state = GameWaitingRoom(current.players, readyPlayerIds: next);
+  }
+
+  /// 대기실에서 "준비" 토글. SendEmote는 발신자 자신에게는 돌아오지 않으므로
+  /// (Clients.OthersInGroup) 내 쪽 상태는 낙관적으로 바로 반영한다.
+  Future<void> setReady({required int myUserId, required bool ready}) async {
+    _updateReady(myUserId, ready);
+    await _socket.sendEmote(ready ? _readyOnEmote : _readyOffEmote);
   }
 
   void _applyStateSync(
@@ -235,12 +273,46 @@ class GameController extends StateNotifier<GameControllerState> {
         (c) => c.copyWith(notice: notice),
       );
 
+  /// TurnChanged(reason: "timeout")는 서버가 제한시간 초과로 대신 턴을 넘긴
+  /// 경우다. 노블 선택 대기 중이었다면 서버가 이미 포기 처리했으므로
+  /// pendingNobleChoice UI도 같이 닫아야 하고("[8]"), 누구 턴이 시간초과됐는지
+  /// 안내 메시지를 띄운다.
+  void _handleTurnChanged(int currentPlayerId, int turnNumber, String? reason) {
+    final current = state;
+    final previousPlayerId =
+        current is GameConnected ? current.gameState.currentPlayerId : null;
+
+    _mutateGameState(
+      (gs) => gs.copyWith(currentPlayerId: currentPlayerId, turnNumber: turnNumber),
+    );
+
+    if (reason == 'timeout') {
+      final nickname = current is GameConnected && previousPlayerId != null
+          ? _nicknameOf(current.players, previousPlayerId)
+          : null;
+      _updateConnected(
+        (c) => c.copyWith(
+          notice: '${nickname ?? "상대방"} 님이 시간 초과로 턴을 넘겼습니다.',
+          clearPendingNobleChoice: true,
+        ),
+      );
+    }
+  }
+
+  String? _nicknameOf(List<Player> players, int userId) {
+    for (final p in players) {
+      if (p.id == userId) return p.nickname;
+    }
+    return null;
+  }
+
   void _addRoomPlayer(int userId, String nickname) {
     final current = state;
     if (current is GameWaitingRoom) {
       if (current.players.any((p) => p.id == userId)) return;
       state = GameWaitingRoom(
         [...current.players, Player(id: userId, nickname: nickname)],
+        readyPlayerIds: current.readyPlayerIds,
       );
     } else if (current is GameConnected) {
       if (current.players.any((p) => p.id == userId)) {
@@ -259,6 +331,7 @@ class GameController extends StateNotifier<GameControllerState> {
     if (current is GameWaitingRoom) {
       state = GameWaitingRoom(
         current.players.where((p) => p.id != userId).toList(),
+        readyPlayerIds: current.readyPlayerIds.where((id) => id != userId).toSet(),
       );
     } else if (current is GameConnected) {
       state = current.copyWith(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/friend.dart';
 import '../models/friend_request.dart';
 import '../models/player.dart';
+import '../state/auth_controller.dart';
 import '../state/friend_controller.dart';
 import '../theme/app_theme.dart';
 import 'profile.dart';
@@ -293,12 +294,12 @@ class _RequestRow extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 16,
-            backgroundColor: avatarToneFor(request.fromNickname ?? '?'),
-            child: Text((request.fromNickname ?? '?').characters.first,
+            backgroundColor: avatarToneFor(request.nickname),
+            child: Text(request.nickname.characters.first,
                 style: const TextStyle(fontSize: 12)),
           ),
           const SizedBox(width: 10),
-          Expanded(child: Text(request.fromNickname ?? 'user_${request.fromUserId}')),
+          Expanded(child: Text(request.nickname)),
           IconButton(
             icon: const Icon(Icons.check, color: AppColors.success),
             onPressed: onAccept,
@@ -323,6 +324,21 @@ class _FriendChatScreen extends ConsumerStatefulWidget {
 
 class _FriendChatScreenState extends ConsumerState<_FriendChatScreen> {
   final _draftController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 영구 저장된 이전 대화 이력을 불러온다(실시간 송수신은 SocialHub가 계속 처리).
+    Future.microtask(() {
+      final auth = ref.read(authControllerProvider);
+      if (auth is AuthAuthenticated) {
+        ref.read(friendControllerProvider.notifier).loadHistory(
+              widget.friend.userId,
+              myUserId: auth.user.userId,
+            );
+      }
+    });
+  }
 
   Future<void> _send() async {
     final text = _draftController.text.trim();

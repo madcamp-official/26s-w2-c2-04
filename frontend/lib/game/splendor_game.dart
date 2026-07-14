@@ -110,19 +110,21 @@ class SplendorGame extends FlameGame {
     }
   }
 
+  // 카드와 토큰은 한 턴에 하나만 고를 수 있는 서로 다른 행동이라, 한쪽을
+  // 고르면 반대쪽 선택은 항상 지운다(둘 다 선택된 채로 남는 걸 막는다).
   void _handleCardTap(SplendorCard card, bool reserved) {
     final current = selection.value;
     if (current.card?.id == card.id) {
       selection.value = current.copyWith(clearCard: true);
     } else {
-      selection.value = BoardSelection(card: card, cardIsReserved: reserved, gems: current.gems);
+      selection.value = BoardSelection(card: card, cardIsReserved: reserved);
     }
     _board.applySelectionHighlight(selection.value);
   }
 
   void _handleGemTap(String gem) {
     final tokenBank = _latestState?.tokenBank ?? const <String, int>{};
-    selection.value = selection.value.copyWith(
+    selection.value = BoardSelection(
       gems: _nextGemSelection(selection.value.gems, gem, tokenBank),
     );
     _board.applySelectionHighlight(selection.value);

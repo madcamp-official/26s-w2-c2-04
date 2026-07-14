@@ -7,7 +7,7 @@ import '../models/gameroom.dart';
 import '../screens/play.dart';
 import '../theme/app_theme.dart';
 
-class MinimizedRoomBadge extends StatelessWidget {
+class MinimizedRoomBadge extends StatefulWidget {
   final GameRoom room;
   final GlobalKey<NavigatorState> navigatorKey;
 
@@ -16,6 +16,27 @@ class MinimizedRoomBadge extends StatelessWidget {
     required this.room,
     required this.navigatorKey,
   });
+
+  @override
+  State<MinimizedRoomBadge> createState() => _MinimizedRoomBadgeState();
+}
+
+class _MinimizedRoomBadgeState extends State<MinimizedRoomBadge> {
+  // 이 배지 자체는 PlayScreen이 mount되면(roomScreenVisibleProvider) main.dart가
+  // 트리에서 완전히 빼버리므로 더 이상 겹쳐 보이지 않는다. 다만 그 상태 반영이
+  // 한 프레임 늦을 수 있어, push가 끝나기(그 라우트가 pop되기) 전까지 추가 탭을
+  // 무시하는 보조 가드를 남겨둔다.
+  bool _pushing = false;
+
+  void _openRoom() {
+    if (_pushing) return;
+    setState(() => _pushing = true);
+    widget.navigatorKey.currentState
+        ?.push(MaterialPageRoute(builder: (_) => PlayScreen(room: widget.room)))
+        .whenComplete(() {
+      if (mounted) setState(() => _pushing = false);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,11 +48,7 @@ class MinimizedRoomBadge extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(24),
-            onTap: () {
-              navigatorKey.currentState?.push(
-                MaterialPageRoute(builder: (_) => PlayScreen(room: room)),
-              );
-            },
+            onTap: _openRoom,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
@@ -48,7 +65,7 @@ class MinimizedRoomBadge extends StatelessWidget {
                   const Icon(Icons.meeting_room, size: 18, color: AppColors.gold),
                   const SizedBox(width: 8),
                   Text(
-                    '방 ${room.roomId} 대기 중',
+                    '방 ${widget.room.roomId} 대기 중',
                     style: const TextStyle(
                       color: AppColors.textHeading,
                       fontSize: 13,

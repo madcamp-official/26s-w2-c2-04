@@ -37,6 +37,9 @@ class GameHubEvent with _$GameHubEvent {
   const factory GameHubEvent.turnChanged({
     required int currentPlayerId,
     required int turnNumber,
+    // "action" | "timeout". RoomDepartureService가 보내는 TurnChanged(참가자 퇴장으로
+    // 인한 강제 턴 넘김)에는 이 필드가 아예 없어 null일 수 있다.
+    String? reason,
   }) = GameHubTurnChanged;
 
   const factory GameHubEvent.nobleAwarded({
@@ -119,6 +122,7 @@ GameHubEvent parseGameHubEvent(String method, List<Object?>? args) {
       return GameHubEvent.turnChanged(
         currentPlayerId: (json['currentPlayerId'] as num).toInt(),
         turnNumber: json['turnNumber'] as int,
+        reason: json['reason'] as String?,
       );
     case 'NobleAwarded':
       return GameHubEvent.nobleAwarded(
