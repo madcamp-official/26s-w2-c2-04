@@ -1,0 +1,24 @@
+# 리포지토리 최상위 공용 gitignore. backend/Backend, backend/Backend.Tests,
+# frontend에는 각자 더 구체적인 .gitignore가 이미 있으니(bin/obj, .dart_tool 등)
+# 여기서는 그 외 위치(리포 루트, Main page design 등)에서 생길 수 있는 빌드
+# 산출물/캐시/에디터 파일을 잡는다.
+
+# .NET 빌드 산출물(어느 위치에 있든)
+bin/
+obj/
+
+# Node/Vite (Main page design)
+node_modules/
+dist/
+.vite/
+
+# IDE / 에디터
+.vs/
+.idea/
+*.iml
+# .vscode/는 공유해도 되는 launch/tasks 설정이 들어있을 수 있어 기본은 유지(주석 처리).
+# .vscode/
+
+# OS
+.DS_Store
+Thumbs.db
