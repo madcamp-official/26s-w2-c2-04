@@ -18,9 +18,25 @@ public class SocialHub(AppDbContext db, PresenceStore presence) : Hub
     public override async Task OnConnectedAsync()
     {
         var userId = Context.User!.GetUserId();
-        if (await presence.ConnectSocialAsync(userId))
-            await BroadcastStatusAsync(db, presence, Clients, userId);
 
+        // ConnectSocialAsync는 카운트가 0->1로 바뀔 때만 true를 반환한다. false면 이미
+        // 다른 연결(다른 기기/브라우저/탭)이 붙어있다는 뜻 — 방금 늘어난 카운트를 되돌리고
+        // 이 연결은 거부한다. REST /auth/login의 ALREADY_LOGGED_IN 체크만으로는 부족하다:
+        // 캐시된 accessToken으로 재로그인 없이 재연결하는 경로(AuthController.restoreSession,
+        // 예: 탭을 닫았다 다시 여는 경우)는 /login을 거치지 않아 그 체크를 우회하므로,
+        // 실제 "동시접속 차단"은 연결 시점(Hub)에서 강제해야 한다.
+        // OnConnectedAsync에서 예외를 던지면 SignalR이 연결을 아예 성립시키지 않고
+        // 거부하며, 이 경우 OnDisconnectedAsync는 호출되지 않는다(연결이 성립한 적이
+        // 없으므로) — 그래서 DisconnectSocialAsync를 직접 호출해 카운트를 되돌려야 한다.
+        // Context.Abort()를 쓰면 OnDisconnectedAsync가 뒤따라 호출돼 정상 연결의 카운트까지
+        // 잘못 깎일 수 있어 피한다.
+        if (!await presence.ConnectSocialAsync(userId))
+        {
+            await presence.DisconnectSocialAsync(userId);
+            throw new HubException("ALREADY_LOGGED_IN");
+        }
+
+        await BroadcastStatusAsync(db, presence, Clients, userId);
         await base.OnConnectedAsync();
     }
 

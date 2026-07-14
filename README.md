@@ -229,6 +229,8 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 
 이 Hub는 특정 게임 방(Room)에 종속되지 않고 **로그인 직후부터 앱이 살아있는 동안(로비 포함) 상시 연결을 유지**하며, 친구 프레즌스·요청 알림·친구 간 1:1 채팅을 처리한다. `GameHub`와는 별도 연결이며, 로그아웃 또는 앱 종료 시에만 해제한다.
 
+**[변경]** 동시접속 차단은 이 Hub의 연결 시점에서 강제된다 — 접속 시도 시 같은 계정의 다른 연결이 이미 있으면(`OnConnectedAsync`) 연결 자체를 거부한다(`HubException`(`ALREADY_LOGGED_IN`), 클라이언트의 `connection.start()`가 예외로 실패함). REST `/auth/login`의 `ALREADY_LOGGED_IN` 체크는 신규 로그인만 막을 뿐, 캐시된 accessToken으로 로그인 없이 재연결하는 경로(예: 탭을 닫았다 다시 여는 세션 복원)는 걸러내지 못해 이 Hub 레벨 체크가 추가됐다.
+
 ### 9.1 Client → Server
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |

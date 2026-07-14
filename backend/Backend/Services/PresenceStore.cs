@@ -19,6 +19,21 @@ public class PresenceStore(IConnectionMultiplexer redis)
 
     private readonly IDatabase _db = redis.GetDatabase();
 
+    /// <summary>
+    /// 앱 시작 시 한 번 호출한다. Redis 연결 카운터(SocialOnlineHashKey/GameOnlineHashKey)는
+    /// SignalR OnConnectedAsync에서 +1, OnDisconnectedAsync에서 -1 되는데, 백엔드 프로세스가
+    /// 정상 종료가 아니라 강제 종료(kill, 컨테이너 OOM 등)되면 그 순간 열려 있던 연결의
+    /// OnDisconnectedAsync가 호출되지 않아 카운터가 감소하지 못한 채 Redis에 영구히 남는다.
+    /// Redis는 백엔드 프로세스와 별개로 떠 있어서 재시작해도 저절로 안 돌아오고, 그 결과
+    /// 실제로는 아무도 접속 안 했는데도 "로그인 중"으로 판정돼 재로그인이 막히는 문제로
+    /// 이어졌다. 프로세스가 막 시작한 시점엔 정의상 아직 어떤 연결도 있을 수 없으므로,
+    /// 이 시점에 지우는 건 항상 안전하다.
+    /// (백엔드가 여러 인스턴스로 동시에 뜨는 배포라면 이 리셋이 다른 인스턴스의 살아있는
+    /// 연결 카운트까지 지워버리므로 위험하다 — 지금은 단일 인스턴스 배포라 문제없다.)
+    /// </summary>
+    public Task ResetConnectionCountersAsync() =>
+        Task.WhenAll(_db.KeyDeleteAsync(SocialOnlineHashKey), _db.KeyDeleteAsync(GameOnlineHashKey));
+
     /// <returns>이번 연결로 방금 온라인이 되었으면 true(연결 수가 0에서 1로 전환).</returns>
     public async Task<bool> ConnectSocialAsync(int userId) =>
         await _db.HashIncrementAsync(SocialOnlineHashKey, userId, 1) == 1;
