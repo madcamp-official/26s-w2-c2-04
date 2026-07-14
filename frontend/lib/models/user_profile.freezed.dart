@@ -20,9 +20,10 @@ RankingSummary _$RankingSummaryFromJson(Map<String, dynamic> json) {
 
 /// @nodoc
 mixin _$RankingSummary {
+  int get playerCount => throw _privateConstructorUsedError;
   int get rank => throw _privateConstructorUsedError;
   int get mmr => throw _privateConstructorUsedError;
-  int get gamesPlayedSeason => throw _privateConstructorUsedError;
+  int get gamesPlayed => throw _privateConstructorUsedError;
   double get avgPlace => throw _privateConstructorUsedError;
 
   /// Serializes this RankingSummary to a JSON map.
@@ -41,7 +42,8 @@ abstract class $RankingSummaryCopyWith<$Res> {
           RankingSummary value, $Res Function(RankingSummary) then) =
       _$RankingSummaryCopyWithImpl<$Res, RankingSummary>;
   @useResult
-  $Res call({int rank, int mmr, int gamesPlayedSeason, double avgPlace});
+  $Res call(
+      {int playerCount, int rank, int mmr, int gamesPlayed, double avgPlace});
 }
 
 /// @nodoc
@@ -59,12 +61,17 @@ class _$RankingSummaryCopyWithImpl<$Res, $Val extends RankingSummary>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? playerCount = null,
     Object? rank = null,
     Object? mmr = null,
-    Object? gamesPlayedSeason = null,
+    Object? gamesPlayed = null,
     Object? avgPlace = null,
   }) {
     return _then(_value.copyWith(
+      playerCount: null == playerCount
+          ? _value.playerCount
+          : playerCount // ignore: cast_nullable_to_non_nullable
+              as int,
       rank: null == rank
           ? _value.rank
           : rank // ignore: cast_nullable_to_non_nullable
@@ -73,9 +80,9 @@ class _$RankingSummaryCopyWithImpl<$Res, $Val extends RankingSummary>
           ? _value.mmr
           : mmr // ignore: cast_nullable_to_non_nullable
               as int,
-      gamesPlayedSeason: null == gamesPlayedSeason
-          ? _value.gamesPlayedSeason
-          : gamesPlayedSeason // ignore: cast_nullable_to_non_nullable
+      gamesPlayed: null == gamesPlayed
+          ? _value.gamesPlayed
+          : gamesPlayed // ignore: cast_nullable_to_non_nullable
               as int,
       avgPlace: null == avgPlace
           ? _value.avgPlace
@@ -93,7 +100,8 @@ abstract class _$$RankingSummaryImplCopyWith<$Res>
       __$$RankingSummaryImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({int rank, int mmr, int gamesPlayedSeason, double avgPlace});
+  $Res call(
+      {int playerCount, int rank, int mmr, int gamesPlayed, double avgPlace});
 }
 
 /// @nodoc
@@ -109,12 +117,17 @@ class __$$RankingSummaryImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? playerCount = null,
     Object? rank = null,
     Object? mmr = null,
-    Object? gamesPlayedSeason = null,
+    Object? gamesPlayed = null,
     Object? avgPlace = null,
   }) {
     return _then(_$RankingSummaryImpl(
+      playerCount: null == playerCount
+          ? _value.playerCount
+          : playerCount // ignore: cast_nullable_to_non_nullable
+              as int,
       rank: null == rank
           ? _value.rank
           : rank // ignore: cast_nullable_to_non_nullable
@@ -123,9 +136,9 @@ class __$$RankingSummaryImplCopyWithImpl<$Res>
           ? _value.mmr
           : mmr // ignore: cast_nullable_to_non_nullable
               as int,
-      gamesPlayedSeason: null == gamesPlayedSeason
-          ? _value.gamesPlayedSeason
-          : gamesPlayedSeason // ignore: cast_nullable_to_non_nullable
+      gamesPlayed: null == gamesPlayed
+          ? _value.gamesPlayed
+          : gamesPlayed // ignore: cast_nullable_to_non_nullable
               as int,
       avgPlace: null == avgPlace
           ? _value.avgPlace
@@ -139,26 +152,29 @@ class __$$RankingSummaryImplCopyWithImpl<$Res>
 @JsonSerializable()
 class _$RankingSummaryImpl implements _RankingSummary {
   const _$RankingSummaryImpl(
-      {required this.rank,
+      {required this.playerCount,
+      required this.rank,
       required this.mmr,
-      required this.gamesPlayedSeason,
+      required this.gamesPlayed,
       required this.avgPlace});
 
   factory _$RankingSummaryImpl.fromJson(Map<String, dynamic> json) =>
       _$$RankingSummaryImplFromJson(json);
 
   @override
+  final int playerCount;
+  @override
   final int rank;
   @override
   final int mmr;
   @override
-  final int gamesPlayedSeason;
+  final int gamesPlayed;
   @override
   final double avgPlace;
 
   @override
   String toString() {
-    return 'RankingSummary(rank: $rank, mmr: $mmr, gamesPlayedSeason: $gamesPlayedSeason, avgPlace: $avgPlace)';
+    return 'RankingSummary(playerCount: $playerCount, rank: $rank, mmr: $mmr, gamesPlayed: $gamesPlayed, avgPlace: $avgPlace)';
   }
 
   @override
@@ -166,10 +182,12 @@ class _$RankingSummaryImpl implements _RankingSummary {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$RankingSummaryImpl &&
+            (identical(other.playerCount, playerCount) ||
+                other.playerCount == playerCount) &&
             (identical(other.rank, rank) || other.rank == rank) &&
             (identical(other.mmr, mmr) || other.mmr == mmr) &&
-            (identical(other.gamesPlayedSeason, gamesPlayedSeason) ||
-                other.gamesPlayedSeason == gamesPlayedSeason) &&
+            (identical(other.gamesPlayed, gamesPlayed) ||
+                other.gamesPlayed == gamesPlayed) &&
             (identical(other.avgPlace, avgPlace) ||
                 other.avgPlace == avgPlace));
   }
@@ -177,7 +195,7 @@ class _$RankingSummaryImpl implements _RankingSummary {
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   int get hashCode =>
-      Object.hash(runtimeType, rank, mmr, gamesPlayedSeason, avgPlace);
+      Object.hash(runtimeType, playerCount, rank, mmr, gamesPlayed, avgPlace);
 
   /// Create a copy of RankingSummary
   /// with the given fields replaced by the non-null parameter values.
@@ -198,20 +216,23 @@ class _$RankingSummaryImpl implements _RankingSummary {
 
 abstract class _RankingSummary implements RankingSummary {
   const factory _RankingSummary(
-      {required final int rank,
+      {required final int playerCount,
+      required final int rank,
       required final int mmr,
-      required final int gamesPlayedSeason,
+      required final int gamesPlayed,
       required final double avgPlace}) = _$RankingSummaryImpl;
 
   factory _RankingSummary.fromJson(Map<String, dynamic> json) =
       _$RankingSummaryImpl.fromJson;
 
   @override
+  int get playerCount;
+  @override
   int get rank;
   @override
   int get mmr;
   @override
-  int get gamesPlayedSeason;
+  int get gamesPlayed;
   @override
   double get avgPlace;
 
@@ -223,213 +244,260 @@ abstract class _RankingSummary implements RankingSummary {
       throw _privateConstructorUsedError;
 }
 
-RecentGame _$RecentGameFromJson(Map<String, dynamic> json) {
-  return _RecentGame.fromJson(json);
+RecentMatch _$RecentMatchFromJson(Map<String, dynamic> json) {
+  return _RecentMatch.fromJson(json);
 }
 
 /// @nodoc
-mixin _$RecentGame {
+mixin _$RecentMatch {
   int get gameId => throw _privateConstructorUsedError;
-  int get playersNumber => throw _privateConstructorUsedError;
-  String get gameType =>
-      throw _privateConstructorUsedError; // "Ranked" | "Unranked"
+  int get playerCount => throw _privateConstructorUsedError;
   int get place => throw _privateConstructorUsedError;
+  int get score => throw _privateConstructorUsedError;
+  bool get isRanked => throw _privateConstructorUsedError;
+  DateTime get playedAt => throw _privateConstructorUsedError;
 
-  /// Serializes this RecentGame to a JSON map.
+  /// Serializes this RecentMatch to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
 
-  /// Create a copy of RecentGame
+  /// Create a copy of RecentMatch
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
-  $RecentGameCopyWith<RecentGame> get copyWith =>
+  $RecentMatchCopyWith<RecentMatch> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
 /// @nodoc
-abstract class $RecentGameCopyWith<$Res> {
-  factory $RecentGameCopyWith(
-          RecentGame value, $Res Function(RecentGame) then) =
-      _$RecentGameCopyWithImpl<$Res, RecentGame>;
+abstract class $RecentMatchCopyWith<$Res> {
+  factory $RecentMatchCopyWith(
+          RecentMatch value, $Res Function(RecentMatch) then) =
+      _$RecentMatchCopyWithImpl<$Res, RecentMatch>;
   @useResult
-  $Res call({int gameId, int playersNumber, String gameType, int place});
+  $Res call(
+      {int gameId,
+      int playerCount,
+      int place,
+      int score,
+      bool isRanked,
+      DateTime playedAt});
 }
 
 /// @nodoc
-class _$RecentGameCopyWithImpl<$Res, $Val extends RecentGame>
-    implements $RecentGameCopyWith<$Res> {
-  _$RecentGameCopyWithImpl(this._value, this._then);
+class _$RecentMatchCopyWithImpl<$Res, $Val extends RecentMatch>
+    implements $RecentMatchCopyWith<$Res> {
+  _$RecentMatchCopyWithImpl(this._value, this._then);
 
   // ignore: unused_field
   final $Val _value;
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of RecentGame
+  /// Create a copy of RecentMatch
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
     Object? gameId = null,
-    Object? playersNumber = null,
-    Object? gameType = null,
+    Object? playerCount = null,
     Object? place = null,
+    Object? score = null,
+    Object? isRanked = null,
+    Object? playedAt = null,
   }) {
     return _then(_value.copyWith(
       gameId: null == gameId
           ? _value.gameId
           : gameId // ignore: cast_nullable_to_non_nullable
               as int,
-      playersNumber: null == playersNumber
-          ? _value.playersNumber
-          : playersNumber // ignore: cast_nullable_to_non_nullable
+      playerCount: null == playerCount
+          ? _value.playerCount
+          : playerCount // ignore: cast_nullable_to_non_nullable
               as int,
-      gameType: null == gameType
-          ? _value.gameType
-          : gameType // ignore: cast_nullable_to_non_nullable
-              as String,
       place: null == place
           ? _value.place
           : place // ignore: cast_nullable_to_non_nullable
               as int,
+      score: null == score
+          ? _value.score
+          : score // ignore: cast_nullable_to_non_nullable
+              as int,
+      isRanked: null == isRanked
+          ? _value.isRanked
+          : isRanked // ignore: cast_nullable_to_non_nullable
+              as bool,
+      playedAt: null == playedAt
+          ? _value.playedAt
+          : playedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
     ) as $Val);
   }
 }
 
 /// @nodoc
-abstract class _$$RecentGameImplCopyWith<$Res>
-    implements $RecentGameCopyWith<$Res> {
-  factory _$$RecentGameImplCopyWith(
-          _$RecentGameImpl value, $Res Function(_$RecentGameImpl) then) =
-      __$$RecentGameImplCopyWithImpl<$Res>;
+abstract class _$$RecentMatchImplCopyWith<$Res>
+    implements $RecentMatchCopyWith<$Res> {
+  factory _$$RecentMatchImplCopyWith(
+          _$RecentMatchImpl value, $Res Function(_$RecentMatchImpl) then) =
+      __$$RecentMatchImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({int gameId, int playersNumber, String gameType, int place});
+  $Res call(
+      {int gameId,
+      int playerCount,
+      int place,
+      int score,
+      bool isRanked,
+      DateTime playedAt});
 }
 
 /// @nodoc
-class __$$RecentGameImplCopyWithImpl<$Res>
-    extends _$RecentGameCopyWithImpl<$Res, _$RecentGameImpl>
-    implements _$$RecentGameImplCopyWith<$Res> {
-  __$$RecentGameImplCopyWithImpl(
-      _$RecentGameImpl _value, $Res Function(_$RecentGameImpl) _then)
+class __$$RecentMatchImplCopyWithImpl<$Res>
+    extends _$RecentMatchCopyWithImpl<$Res, _$RecentMatchImpl>
+    implements _$$RecentMatchImplCopyWith<$Res> {
+  __$$RecentMatchImplCopyWithImpl(
+      _$RecentMatchImpl _value, $Res Function(_$RecentMatchImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of RecentGame
+  /// Create a copy of RecentMatch
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
     Object? gameId = null,
-    Object? playersNumber = null,
-    Object? gameType = null,
+    Object? playerCount = null,
     Object? place = null,
+    Object? score = null,
+    Object? isRanked = null,
+    Object? playedAt = null,
   }) {
-    return _then(_$RecentGameImpl(
+    return _then(_$RecentMatchImpl(
       gameId: null == gameId
           ? _value.gameId
           : gameId // ignore: cast_nullable_to_non_nullable
               as int,
-      playersNumber: null == playersNumber
-          ? _value.playersNumber
-          : playersNumber // ignore: cast_nullable_to_non_nullable
+      playerCount: null == playerCount
+          ? _value.playerCount
+          : playerCount // ignore: cast_nullable_to_non_nullable
               as int,
-      gameType: null == gameType
-          ? _value.gameType
-          : gameType // ignore: cast_nullable_to_non_nullable
-              as String,
       place: null == place
           ? _value.place
           : place // ignore: cast_nullable_to_non_nullable
               as int,
+      score: null == score
+          ? _value.score
+          : score // ignore: cast_nullable_to_non_nullable
+              as int,
+      isRanked: null == isRanked
+          ? _value.isRanked
+          : isRanked // ignore: cast_nullable_to_non_nullable
+              as bool,
+      playedAt: null == playedAt
+          ? _value.playedAt
+          : playedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
     ));
   }
 }
 
 /// @nodoc
 @JsonSerializable()
-class _$RecentGameImpl implements _RecentGame {
-  const _$RecentGameImpl(
+class _$RecentMatchImpl implements _RecentMatch {
+  const _$RecentMatchImpl(
       {required this.gameId,
-      required this.playersNumber,
-      required this.gameType,
-      required this.place});
+      required this.playerCount,
+      required this.place,
+      required this.score,
+      required this.isRanked,
+      required this.playedAt});
 
-  factory _$RecentGameImpl.fromJson(Map<String, dynamic> json) =>
-      _$$RecentGameImplFromJson(json);
+  factory _$RecentMatchImpl.fromJson(Map<String, dynamic> json) =>
+      _$$RecentMatchImplFromJson(json);
 
   @override
   final int gameId;
   @override
-  final int playersNumber;
-  @override
-  final String gameType;
-// "Ranked" | "Unranked"
+  final int playerCount;
   @override
   final int place;
+  @override
+  final int score;
+  @override
+  final bool isRanked;
+  @override
+  final DateTime playedAt;
 
   @override
   String toString() {
-    return 'RecentGame(gameId: $gameId, playersNumber: $playersNumber, gameType: $gameType, place: $place)';
+    return 'RecentMatch(gameId: $gameId, playerCount: $playerCount, place: $place, score: $score, isRanked: $isRanked, playedAt: $playedAt)';
   }
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _$RecentGameImpl &&
+            other is _$RecentMatchImpl &&
             (identical(other.gameId, gameId) || other.gameId == gameId) &&
-            (identical(other.playersNumber, playersNumber) ||
-                other.playersNumber == playersNumber) &&
-            (identical(other.gameType, gameType) ||
-                other.gameType == gameType) &&
-            (identical(other.place, place) || other.place == place));
+            (identical(other.playerCount, playerCount) ||
+                other.playerCount == playerCount) &&
+            (identical(other.place, place) || other.place == place) &&
+            (identical(other.score, score) || other.score == score) &&
+            (identical(other.isRanked, isRanked) ||
+                other.isRanked == isRanked) &&
+            (identical(other.playedAt, playedAt) ||
+                other.playedAt == playedAt));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode =>
-      Object.hash(runtimeType, gameId, playersNumber, gameType, place);
+  int get hashCode => Object.hash(
+      runtimeType, gameId, playerCount, place, score, isRanked, playedAt);
 
-  /// Create a copy of RecentGame
+  /// Create a copy of RecentMatch
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   @pragma('vm:prefer-inline')
-  _$$RecentGameImplCopyWith<_$RecentGameImpl> get copyWith =>
-      __$$RecentGameImplCopyWithImpl<_$RecentGameImpl>(this, _$identity);
+  _$$RecentMatchImplCopyWith<_$RecentMatchImpl> get copyWith =>
+      __$$RecentMatchImplCopyWithImpl<_$RecentMatchImpl>(this, _$identity);
 
   @override
   Map<String, dynamic> toJson() {
-    return _$$RecentGameImplToJson(
+    return _$$RecentMatchImplToJson(
       this,
     );
   }
 }
 
-abstract class _RecentGame implements RecentGame {
-  const factory _RecentGame(
+abstract class _RecentMatch implements RecentMatch {
+  const factory _RecentMatch(
       {required final int gameId,
-      required final int playersNumber,
-      required final String gameType,
-      required final int place}) = _$RecentGameImpl;
+      required final int playerCount,
+      required final int place,
+      required final int score,
+      required final bool isRanked,
+      required final DateTime playedAt}) = _$RecentMatchImpl;
 
-  factory _RecentGame.fromJson(Map<String, dynamic> json) =
-      _$RecentGameImpl.fromJson;
+  factory _RecentMatch.fromJson(Map<String, dynamic> json) =
+      _$RecentMatchImpl.fromJson;
 
   @override
   int get gameId;
   @override
-  int get playersNumber;
-  @override
-  String get gameType; // "Ranked" | "Unranked"
+  int get playerCount;
   @override
   int get place;
+  @override
+  int get score;
+  @override
+  bool get isRanked;
+  @override
+  DateTime get playedAt;
 
-  /// Create a copy of RecentGame
+  /// Create a copy of RecentMatch
   /// with the given fields replaced by the non-null parameter values.
   @override
   @JsonKey(includeFromJson: false, includeToJson: false)
-  _$$RecentGameImplCopyWith<_$RecentGameImpl> get copyWith =>
+  _$$RecentMatchImplCopyWith<_$RecentMatchImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
@@ -442,11 +510,10 @@ mixin _$UserProfile {
   int get userId => throw _privateConstructorUsedError;
   String get nickname => throw _privateConstructorUsedError;
   String? get avatarUrl => throw _privateConstructorUsedError;
-  DateTime get createdAt => throw _privateConstructorUsedError;
-  List<RecentGame> get recentGames =>
-      throw _privateConstructorUsedError; // key: 인원수 문자열("2"|"3"|"4")
-  Map<String, RankingSummary> get rankings =>
-      throw _privateConstructorUsedError;
+  int get totalGamesPlayed => throw _privateConstructorUsedError;
+  double get overallAvgPlace => throw _privateConstructorUsedError;
+  List<RankingSummary> get rankings => throw _privateConstructorUsedError;
+  List<RecentMatch> get recentMatches => throw _privateConstructorUsedError;
 
   /// Serializes this UserProfile to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -468,9 +535,10 @@ abstract class $UserProfileCopyWith<$Res> {
       {int userId,
       String nickname,
       String? avatarUrl,
-      DateTime createdAt,
-      List<RecentGame> recentGames,
-      Map<String, RankingSummary> rankings});
+      int totalGamesPlayed,
+      double overallAvgPlace,
+      List<RankingSummary> rankings,
+      List<RecentMatch> recentMatches});
 }
 
 /// @nodoc
@@ -491,9 +559,10 @@ class _$UserProfileCopyWithImpl<$Res, $Val extends UserProfile>
     Object? userId = null,
     Object? nickname = null,
     Object? avatarUrl = freezed,
-    Object? createdAt = null,
-    Object? recentGames = null,
+    Object? totalGamesPlayed = null,
+    Object? overallAvgPlace = null,
     Object? rankings = null,
+    Object? recentMatches = null,
   }) {
     return _then(_value.copyWith(
       userId: null == userId
@@ -508,18 +577,22 @@ class _$UserProfileCopyWithImpl<$Res, $Val extends UserProfile>
           ? _value.avatarUrl
           : avatarUrl // ignore: cast_nullable_to_non_nullable
               as String?,
-      createdAt: null == createdAt
-          ? _value.createdAt
-          : createdAt // ignore: cast_nullable_to_non_nullable
-              as DateTime,
-      recentGames: null == recentGames
-          ? _value.recentGames
-          : recentGames // ignore: cast_nullable_to_non_nullable
-              as List<RecentGame>,
+      totalGamesPlayed: null == totalGamesPlayed
+          ? _value.totalGamesPlayed
+          : totalGamesPlayed // ignore: cast_nullable_to_non_nullable
+              as int,
+      overallAvgPlace: null == overallAvgPlace
+          ? _value.overallAvgPlace
+          : overallAvgPlace // ignore: cast_nullable_to_non_nullable
+              as double,
       rankings: null == rankings
           ? _value.rankings
           : rankings // ignore: cast_nullable_to_non_nullable
-              as Map<String, RankingSummary>,
+              as List<RankingSummary>,
+      recentMatches: null == recentMatches
+          ? _value.recentMatches
+          : recentMatches // ignore: cast_nullable_to_non_nullable
+              as List<RecentMatch>,
     ) as $Val);
   }
 }
@@ -536,9 +609,10 @@ abstract class _$$UserProfileImplCopyWith<$Res>
       {int userId,
       String nickname,
       String? avatarUrl,
-      DateTime createdAt,
-      List<RecentGame> recentGames,
-      Map<String, RankingSummary> rankings});
+      int totalGamesPlayed,
+      double overallAvgPlace,
+      List<RankingSummary> rankings,
+      List<RecentMatch> recentMatches});
 }
 
 /// @nodoc
@@ -557,9 +631,10 @@ class __$$UserProfileImplCopyWithImpl<$Res>
     Object? userId = null,
     Object? nickname = null,
     Object? avatarUrl = freezed,
-    Object? createdAt = null,
-    Object? recentGames = null,
+    Object? totalGamesPlayed = null,
+    Object? overallAvgPlace = null,
     Object? rankings = null,
+    Object? recentMatches = null,
   }) {
     return _then(_$UserProfileImpl(
       userId: null == userId
@@ -574,18 +649,22 @@ class __$$UserProfileImplCopyWithImpl<$Res>
           ? _value.avatarUrl
           : avatarUrl // ignore: cast_nullable_to_non_nullable
               as String?,
-      createdAt: null == createdAt
-          ? _value.createdAt
-          : createdAt // ignore: cast_nullable_to_non_nullable
-              as DateTime,
-      recentGames: null == recentGames
-          ? _value._recentGames
-          : recentGames // ignore: cast_nullable_to_non_nullable
-              as List<RecentGame>,
+      totalGamesPlayed: null == totalGamesPlayed
+          ? _value.totalGamesPlayed
+          : totalGamesPlayed // ignore: cast_nullable_to_non_nullable
+              as int,
+      overallAvgPlace: null == overallAvgPlace
+          ? _value.overallAvgPlace
+          : overallAvgPlace // ignore: cast_nullable_to_non_nullable
+              as double,
       rankings: null == rankings
           ? _value._rankings
           : rankings // ignore: cast_nullable_to_non_nullable
-              as Map<String, RankingSummary>,
+              as List<RankingSummary>,
+      recentMatches: null == recentMatches
+          ? _value._recentMatches
+          : recentMatches // ignore: cast_nullable_to_non_nullable
+              as List<RecentMatch>,
     ));
   }
 }
@@ -597,11 +676,12 @@ class _$UserProfileImpl implements _UserProfile {
       {required this.userId,
       required this.nickname,
       this.avatarUrl,
-      required this.createdAt,
-      final List<RecentGame> recentGames = const [],
-      final Map<String, RankingSummary> rankings = const {}})
-      : _recentGames = recentGames,
-        _rankings = rankings;
+      this.totalGamesPlayed = 0,
+      this.overallAvgPlace = 0,
+      final List<RankingSummary> rankings = const [],
+      final List<RecentMatch> recentMatches = const []})
+      : _rankings = rankings,
+        _recentMatches = recentMatches;
 
   factory _$UserProfileImpl.fromJson(Map<String, dynamic> json) =>
       _$$UserProfileImplFromJson(json);
@@ -613,30 +693,32 @@ class _$UserProfileImpl implements _UserProfile {
   @override
   final String? avatarUrl;
   @override
-  final DateTime createdAt;
-  final List<RecentGame> _recentGames;
+  @JsonKey()
+  final int totalGamesPlayed;
   @override
   @JsonKey()
-  List<RecentGame> get recentGames {
-    if (_recentGames is EqualUnmodifiableListView) return _recentGames;
+  final double overallAvgPlace;
+  final List<RankingSummary> _rankings;
+  @override
+  @JsonKey()
+  List<RankingSummary> get rankings {
+    if (_rankings is EqualUnmodifiableListView) return _rankings;
     // ignore: implicit_dynamic_type
-    return EqualUnmodifiableListView(_recentGames);
+    return EqualUnmodifiableListView(_rankings);
   }
 
-// key: 인원수 문자열("2"|"3"|"4")
-  final Map<String, RankingSummary> _rankings;
-// key: 인원수 문자열("2"|"3"|"4")
+  final List<RecentMatch> _recentMatches;
   @override
   @JsonKey()
-  Map<String, RankingSummary> get rankings {
-    if (_rankings is EqualUnmodifiableMapView) return _rankings;
+  List<RecentMatch> get recentMatches {
+    if (_recentMatches is EqualUnmodifiableListView) return _recentMatches;
     // ignore: implicit_dynamic_type
-    return EqualUnmodifiableMapView(_rankings);
+    return EqualUnmodifiableListView(_recentMatches);
   }
 
   @override
   String toString() {
-    return 'UserProfile(userId: $userId, nickname: $nickname, avatarUrl: $avatarUrl, createdAt: $createdAt, recentGames: $recentGames, rankings: $rankings)';
+    return 'UserProfile(userId: $userId, nickname: $nickname, avatarUrl: $avatarUrl, totalGamesPlayed: $totalGamesPlayed, overallAvgPlace: $overallAvgPlace, rankings: $rankings, recentMatches: $recentMatches)';
   }
 
   @override
@@ -649,11 +731,13 @@ class _$UserProfileImpl implements _UserProfile {
                 other.nickname == nickname) &&
             (identical(other.avatarUrl, avatarUrl) ||
                 other.avatarUrl == avatarUrl) &&
-            (identical(other.createdAt, createdAt) ||
-                other.createdAt == createdAt) &&
+            (identical(other.totalGamesPlayed, totalGamesPlayed) ||
+                other.totalGamesPlayed == totalGamesPlayed) &&
+            (identical(other.overallAvgPlace, overallAvgPlace) ||
+                other.overallAvgPlace == overallAvgPlace) &&
+            const DeepCollectionEquality().equals(other._rankings, _rankings) &&
             const DeepCollectionEquality()
-                .equals(other._recentGames, _recentGames) &&
-            const DeepCollectionEquality().equals(other._rankings, _rankings));
+                .equals(other._recentMatches, _recentMatches));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -663,9 +747,10 @@ class _$UserProfileImpl implements _UserProfile {
       userId,
       nickname,
       avatarUrl,
-      createdAt,
-      const DeepCollectionEquality().hash(_recentGames),
-      const DeepCollectionEquality().hash(_rankings));
+      totalGamesPlayed,
+      overallAvgPlace,
+      const DeepCollectionEquality().hash(_rankings),
+      const DeepCollectionEquality().hash(_recentMatches));
 
   /// Create a copy of UserProfile
   /// with the given fields replaced by the non-null parameter values.
@@ -688,9 +773,10 @@ abstract class _UserProfile implements UserProfile {
       {required final int userId,
       required final String nickname,
       final String? avatarUrl,
-      required final DateTime createdAt,
-      final List<RecentGame> recentGames,
-      final Map<String, RankingSummary> rankings}) = _$UserProfileImpl;
+      final int totalGamesPlayed,
+      final double overallAvgPlace,
+      final List<RankingSummary> rankings,
+      final List<RecentMatch> recentMatches}) = _$UserProfileImpl;
 
   factory _UserProfile.fromJson(Map<String, dynamic> json) =
       _$UserProfileImpl.fromJson;
@@ -702,11 +788,13 @@ abstract class _UserProfile implements UserProfile {
   @override
   String? get avatarUrl;
   @override
-  DateTime get createdAt;
+  int get totalGamesPlayed;
   @override
-  List<RecentGame> get recentGames; // key: 인원수 문자열("2"|"3"|"4")
+  double get overallAvgPlace;
   @override
-  Map<String, RankingSummary> get rankings;
+  List<RankingSummary> get rankings;
+  @override
+  List<RecentMatch> get recentMatches;
 
   /// Create a copy of UserProfile
   /// with the given fields replaced by the non-null parameter values.

@@ -21,11 +21,10 @@ FriendRequest _$FriendRequestFromJson(Map<String, dynamic> json) {
 /// @nodoc
 mixin _$FriendRequest {
   int get requestId => throw _privateConstructorUsedError;
-  int get fromUserId => throw _privateConstructorUsedError;
-  int? get toUserId =>
-      throw _privateConstructorUsedError; // 보낸 요청(outgoing) 조회 시에만 채워짐
-  String? get fromNickname => throw _privateConstructorUsedError;
-  FriendRequestStatus get status => throw _privateConstructorUsedError;
+  int get userId =>
+      throw _privateConstructorUsedError; // 상대방 id. incoming이면 보낸 사람, outgoing이면 받는 사람.
+  String get nickname => throw _privateConstructorUsedError;
+  String? get avatarUrl => throw _privateConstructorUsedError;
   DateTime get createdAt => throw _privateConstructorUsedError;
 
   /// Serializes this FriendRequest to a JSON map.
@@ -46,10 +45,9 @@ abstract class $FriendRequestCopyWith<$Res> {
   @useResult
   $Res call(
       {int requestId,
-      int fromUserId,
-      int? toUserId,
-      String? fromNickname,
-      FriendRequestStatus status,
+      int userId,
+      String nickname,
+      String? avatarUrl,
       DateTime createdAt});
 }
 
@@ -69,10 +67,9 @@ class _$FriendRequestCopyWithImpl<$Res, $Val extends FriendRequest>
   @override
   $Res call({
     Object? requestId = null,
-    Object? fromUserId = null,
-    Object? toUserId = freezed,
-    Object? fromNickname = freezed,
-    Object? status = null,
+    Object? userId = null,
+    Object? nickname = null,
+    Object? avatarUrl = freezed,
     Object? createdAt = null,
   }) {
     return _then(_value.copyWith(
@@ -80,22 +77,18 @@ class _$FriendRequestCopyWithImpl<$Res, $Val extends FriendRequest>
           ? _value.requestId
           : requestId // ignore: cast_nullable_to_non_nullable
               as int,
-      fromUserId: null == fromUserId
-          ? _value.fromUserId
-          : fromUserId // ignore: cast_nullable_to_non_nullable
+      userId: null == userId
+          ? _value.userId
+          : userId // ignore: cast_nullable_to_non_nullable
               as int,
-      toUserId: freezed == toUserId
-          ? _value.toUserId
-          : toUserId // ignore: cast_nullable_to_non_nullable
-              as int?,
-      fromNickname: freezed == fromNickname
-          ? _value.fromNickname
-          : fromNickname // ignore: cast_nullable_to_non_nullable
+      nickname: null == nickname
+          ? _value.nickname
+          : nickname // ignore: cast_nullable_to_non_nullable
+              as String,
+      avatarUrl: freezed == avatarUrl
+          ? _value.avatarUrl
+          : avatarUrl // ignore: cast_nullable_to_non_nullable
               as String?,
-      status: null == status
-          ? _value.status
-          : status // ignore: cast_nullable_to_non_nullable
-              as FriendRequestStatus,
       createdAt: null == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
@@ -114,10 +107,9 @@ abstract class _$$FriendRequestImplCopyWith<$Res>
   @useResult
   $Res call(
       {int requestId,
-      int fromUserId,
-      int? toUserId,
-      String? fromNickname,
-      FriendRequestStatus status,
+      int userId,
+      String nickname,
+      String? avatarUrl,
       DateTime createdAt});
 }
 
@@ -135,10 +127,9 @@ class __$$FriendRequestImplCopyWithImpl<$Res>
   @override
   $Res call({
     Object? requestId = null,
-    Object? fromUserId = null,
-    Object? toUserId = freezed,
-    Object? fromNickname = freezed,
-    Object? status = null,
+    Object? userId = null,
+    Object? nickname = null,
+    Object? avatarUrl = freezed,
     Object? createdAt = null,
   }) {
     return _then(_$FriendRequestImpl(
@@ -146,22 +137,18 @@ class __$$FriendRequestImplCopyWithImpl<$Res>
           ? _value.requestId
           : requestId // ignore: cast_nullable_to_non_nullable
               as int,
-      fromUserId: null == fromUserId
-          ? _value.fromUserId
-          : fromUserId // ignore: cast_nullable_to_non_nullable
+      userId: null == userId
+          ? _value.userId
+          : userId // ignore: cast_nullable_to_non_nullable
               as int,
-      toUserId: freezed == toUserId
-          ? _value.toUserId
-          : toUserId // ignore: cast_nullable_to_non_nullable
-              as int?,
-      fromNickname: freezed == fromNickname
-          ? _value.fromNickname
-          : fromNickname // ignore: cast_nullable_to_non_nullable
+      nickname: null == nickname
+          ? _value.nickname
+          : nickname // ignore: cast_nullable_to_non_nullable
+              as String,
+      avatarUrl: freezed == avatarUrl
+          ? _value.avatarUrl
+          : avatarUrl // ignore: cast_nullable_to_non_nullable
               as String?,
-      status: null == status
-          ? _value.status
-          : status // ignore: cast_nullable_to_non_nullable
-              as FriendRequestStatus,
       createdAt: null == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
@@ -175,10 +162,9 @@ class __$$FriendRequestImplCopyWithImpl<$Res>
 class _$FriendRequestImpl implements _FriendRequest {
   const _$FriendRequestImpl(
       {required this.requestId,
-      required this.fromUserId,
-      this.toUserId,
-      this.fromNickname,
-      this.status = FriendRequestStatus.pending,
+      required this.userId,
+      required this.nickname,
+      this.avatarUrl,
       required this.createdAt});
 
   factory _$FriendRequestImpl.fromJson(Map<String, dynamic> json) =>
@@ -187,21 +173,18 @@ class _$FriendRequestImpl implements _FriendRequest {
   @override
   final int requestId;
   @override
-  final int fromUserId;
+  final int userId;
+// 상대방 id. incoming이면 보낸 사람, outgoing이면 받는 사람.
   @override
-  final int? toUserId;
-// 보낸 요청(outgoing) 조회 시에만 채워짐
+  final String nickname;
   @override
-  final String? fromNickname;
-  @override
-  @JsonKey()
-  final FriendRequestStatus status;
+  final String? avatarUrl;
   @override
   final DateTime createdAt;
 
   @override
   String toString() {
-    return 'FriendRequest(requestId: $requestId, fromUserId: $fromUserId, toUserId: $toUserId, fromNickname: $fromNickname, status: $status, createdAt: $createdAt)';
+    return 'FriendRequest(requestId: $requestId, userId: $userId, nickname: $nickname, avatarUrl: $avatarUrl, createdAt: $createdAt)';
   }
 
   @override
@@ -211,21 +194,19 @@ class _$FriendRequestImpl implements _FriendRequest {
             other is _$FriendRequestImpl &&
             (identical(other.requestId, requestId) ||
                 other.requestId == requestId) &&
-            (identical(other.fromUserId, fromUserId) ||
-                other.fromUserId == fromUserId) &&
-            (identical(other.toUserId, toUserId) ||
-                other.toUserId == toUserId) &&
-            (identical(other.fromNickname, fromNickname) ||
-                other.fromNickname == fromNickname) &&
-            (identical(other.status, status) || other.status == status) &&
+            (identical(other.userId, userId) || other.userId == userId) &&
+            (identical(other.nickname, nickname) ||
+                other.nickname == nickname) &&
+            (identical(other.avatarUrl, avatarUrl) ||
+                other.avatarUrl == avatarUrl) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(runtimeType, requestId, fromUserId, toUserId,
-      fromNickname, status, createdAt);
+  int get hashCode => Object.hash(
+      runtimeType, requestId, userId, nickname, avatarUrl, createdAt);
 
   /// Create a copy of FriendRequest
   /// with the given fields replaced by the non-null parameter values.
@@ -246,10 +227,9 @@ class _$FriendRequestImpl implements _FriendRequest {
 abstract class _FriendRequest implements FriendRequest {
   const factory _FriendRequest(
       {required final int requestId,
-      required final int fromUserId,
-      final int? toUserId,
-      final String? fromNickname,
-      final FriendRequestStatus status,
+      required final int userId,
+      required final String nickname,
+      final String? avatarUrl,
       required final DateTime createdAt}) = _$FriendRequestImpl;
 
   factory _FriendRequest.fromJson(Map<String, dynamic> json) =
@@ -258,13 +238,11 @@ abstract class _FriendRequest implements FriendRequest {
   @override
   int get requestId;
   @override
-  int get fromUserId;
+  int get userId; // 상대방 id. incoming이면 보낸 사람, outgoing이면 받는 사람.
   @override
-  int? get toUserId; // 보낸 요청(outgoing) 조회 시에만 채워짐
+  String get nickname;
   @override
-  String? get fromNickname;
-  @override
-  FriendRequestStatus get status;
+  String? get avatarUrl;
   @override
   DateTime get createdAt;
 
