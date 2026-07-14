@@ -106,6 +106,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 var app = builder.Build();
 
+// 프로세스가 막 시작한 시점엔 정의상 아직 어떤 SignalR 연결도 있을 수 없으므로,
+// 이전 프로세스가 비정상 종료돼 Redis에 남아있을 수 있는 연결 카운터를 안전하게
+// 초기화한다(PresenceStore.ResetConnectionCountersAsync 참고 — 로그인이 실제
+// 접속자 없이도 "이미 로그인 중"으로 막히는 문제의 원인이었다).
+await app.Services.GetRequiredService<PresenceStore>().ResetConnectionCountersAsync();
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
