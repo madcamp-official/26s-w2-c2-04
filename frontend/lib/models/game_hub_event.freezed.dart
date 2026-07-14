@@ -169,7 +169,9 @@ mixin _$GameHubEvent {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -195,7 +197,8 @@ mixin _$GameHubEvent {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -219,7 +222,8 @@ mixin _$GameHubEvent {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -432,7 +436,9 @@ class _$GameHubStateSyncImpl implements GameHubStateSync {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -461,7 +467,8 @@ class _$GameHubStateSyncImpl implements GameHubStateSync {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -488,7 +495,8 @@ class _$GameHubStateSyncImpl implements GameHubStateSync {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -694,7 +702,9 @@ class _$GameHubActionResultImpl implements GameHubActionResult {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -723,7 +733,8 @@ class _$GameHubActionResultImpl implements GameHubActionResult {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -750,7 +761,8 @@ class _$GameHubActionResultImpl implements GameHubActionResult {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -859,7 +871,7 @@ abstract class _$$GameHubTurnChangedImplCopyWith<$Res> {
           $Res Function(_$GameHubTurnChangedImpl) then) =
       __$$GameHubTurnChangedImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({int currentPlayerId, int turnNumber});
+  $Res call({int currentPlayerId, int turnNumber, String? reason});
 }
 
 /// @nodoc
@@ -877,6 +889,7 @@ class __$$GameHubTurnChangedImplCopyWithImpl<$Res>
   $Res call({
     Object? currentPlayerId = null,
     Object? turnNumber = null,
+    Object? reason = freezed,
   }) {
     return _then(_$GameHubTurnChangedImpl(
       currentPlayerId: null == currentPlayerId
@@ -887,6 +900,10 @@ class __$$GameHubTurnChangedImplCopyWithImpl<$Res>
           ? _value.turnNumber
           : turnNumber // ignore: cast_nullable_to_non_nullable
               as int,
+      reason: freezed == reason
+          ? _value.reason
+          : reason // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -895,16 +912,20 @@ class __$$GameHubTurnChangedImplCopyWithImpl<$Res>
 
 class _$GameHubTurnChangedImpl implements GameHubTurnChanged {
   const _$GameHubTurnChangedImpl(
-      {required this.currentPlayerId, required this.turnNumber});
+      {required this.currentPlayerId, required this.turnNumber, this.reason});
 
   @override
   final int currentPlayerId;
   @override
   final int turnNumber;
+// "action" | "timeout". RoomDepartureService가 보내는 TurnChanged(참가자 퇴장으로
+// 인한 강제 턴 넘김)에는 이 필드가 아예 없어 null일 수 있다.
+  @override
+  final String? reason;
 
   @override
   String toString() {
-    return 'GameHubEvent.turnChanged(currentPlayerId: $currentPlayerId, turnNumber: $turnNumber)';
+    return 'GameHubEvent.turnChanged(currentPlayerId: $currentPlayerId, turnNumber: $turnNumber, reason: $reason)';
   }
 
   @override
@@ -915,11 +936,13 @@ class _$GameHubTurnChangedImpl implements GameHubTurnChanged {
             (identical(other.currentPlayerId, currentPlayerId) ||
                 other.currentPlayerId == currentPlayerId) &&
             (identical(other.turnNumber, turnNumber) ||
-                other.turnNumber == turnNumber));
+                other.turnNumber == turnNumber) &&
+            (identical(other.reason, reason) || other.reason == reason));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, currentPlayerId, turnNumber);
+  int get hashCode =>
+      Object.hash(runtimeType, currentPlayerId, turnNumber, reason);
 
   /// Create a copy of GameHubEvent
   /// with the given fields replaced by the non-null parameter values.
@@ -939,7 +962,9 @@ class _$GameHubTurnChangedImpl implements GameHubTurnChanged {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -956,7 +981,7 @@ class _$GameHubTurnChangedImpl implements GameHubTurnChanged {
         emoteReceived,
     required TResult Function(String code, String message) errorOccurred,
   }) {
-    return turnChanged(currentPlayerId, turnNumber);
+    return turnChanged(currentPlayerId, turnNumber, reason);
   }
 
   @override
@@ -968,7 +993,8 @@ class _$GameHubTurnChangedImpl implements GameHubTurnChanged {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -983,7 +1009,7 @@ class _$GameHubTurnChangedImpl implements GameHubTurnChanged {
     TResult? Function(int playerId, String emoteId, DateTime ts)? emoteReceived,
     TResult? Function(String code, String message)? errorOccurred,
   }) {
-    return turnChanged?.call(currentPlayerId, turnNumber);
+    return turnChanged?.call(currentPlayerId, turnNumber, reason);
   }
 
   @override
@@ -995,7 +1021,8 @@ class _$GameHubTurnChangedImpl implements GameHubTurnChanged {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -1012,7 +1039,7 @@ class _$GameHubTurnChangedImpl implements GameHubTurnChanged {
     required TResult orElse(),
   }) {
     if (turnChanged != null) {
-      return turnChanged(currentPlayerId, turnNumber);
+      return turnChanged(currentPlayerId, turnNumber, reason);
     }
     return orElse();
   }
@@ -1084,10 +1111,13 @@ class _$GameHubTurnChangedImpl implements GameHubTurnChanged {
 abstract class GameHubTurnChanged implements GameHubEvent {
   const factory GameHubTurnChanged(
       {required final int currentPlayerId,
-      required final int turnNumber}) = _$GameHubTurnChangedImpl;
+      required final int turnNumber,
+      final String? reason}) = _$GameHubTurnChangedImpl;
 
   int get currentPlayerId;
-  int get turnNumber;
+  int get turnNumber; // "action" | "timeout". RoomDepartureService가 보내는 TurnChanged(참가자 퇴장으로
+// 인한 강제 턴 넘김)에는 이 필드가 아예 없어 null일 수 있다.
+  String? get reason;
 
   /// Create a copy of GameHubEvent
   /// with the given fields replaced by the non-null parameter values.
@@ -1181,7 +1211,9 @@ class _$GameHubNobleAwardedImpl implements GameHubNobleAwarded {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -1210,7 +1242,8 @@ class _$GameHubNobleAwardedImpl implements GameHubNobleAwarded {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -1237,7 +1270,8 @@ class _$GameHubNobleAwardedImpl implements GameHubNobleAwarded {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -1434,7 +1468,9 @@ class _$GameHubNobleChoiceRequiredImpl implements GameHubNobleChoiceRequired {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -1463,7 +1499,8 @@ class _$GameHubNobleChoiceRequiredImpl implements GameHubNobleChoiceRequired {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -1490,7 +1527,8 @@ class _$GameHubNobleChoiceRequiredImpl implements GameHubNobleChoiceRequired {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -1677,7 +1715,9 @@ class _$GameHubPlayerJoinedImpl implements GameHubPlayerJoined {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -1706,7 +1746,8 @@ class _$GameHubPlayerJoinedImpl implements GameHubPlayerJoined {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -1733,7 +1774,8 @@ class _$GameHubPlayerJoinedImpl implements GameHubPlayerJoined {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -1918,7 +1960,9 @@ class _$GameHubPlayerLeftImpl implements GameHubPlayerLeft {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -1947,7 +1991,8 @@ class _$GameHubPlayerLeftImpl implements GameHubPlayerLeft {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -1974,7 +2019,8 @@ class _$GameHubPlayerLeftImpl implements GameHubPlayerLeft {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -2163,7 +2209,9 @@ class _$GameHubFinalRoundTriggeredImpl implements GameHubFinalRoundTriggered {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -2192,7 +2240,8 @@ class _$GameHubFinalRoundTriggeredImpl implements GameHubFinalRoundTriggered {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -2219,7 +2268,8 @@ class _$GameHubFinalRoundTriggeredImpl implements GameHubFinalRoundTriggered {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -2426,7 +2476,9 @@ class _$GameHubGameOverImpl implements GameHubGameOver {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -2455,7 +2507,8 @@ class _$GameHubGameOverImpl implements GameHubGameOver {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -2482,7 +2535,8 @@ class _$GameHubGameOverImpl implements GameHubGameOver {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -2678,7 +2732,9 @@ class _$GameHubChatMessageImpl implements GameHubChatMessage {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -2707,7 +2763,8 @@ class _$GameHubChatMessageImpl implements GameHubChatMessage {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -2734,7 +2791,8 @@ class _$GameHubChatMessageImpl implements GameHubChatMessage {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -2931,7 +2989,9 @@ class _$GameHubEmoteReceivedImpl implements GameHubEmoteReceived {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -2960,7 +3020,8 @@ class _$GameHubEmoteReceivedImpl implements GameHubEmoteReceived {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -2987,7 +3048,8 @@ class _$GameHubEmoteReceivedImpl implements GameHubEmoteReceived {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -3174,7 +3236,9 @@ class _$GameHubErrorOccurredImpl implements GameHubErrorOccurred {
     required TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)
         actionResult,
-    required TResult Function(int currentPlayerId, int turnNumber) turnChanged,
+    required TResult Function(
+            int currentPlayerId, int turnNumber, String? reason)
+        turnChanged,
     required TResult Function(int playerId, String nobleId) nobleAwarded,
     required TResult Function(int playerId, List<String> candidateNobleIds)
         nobleChoiceRequired,
@@ -3203,7 +3267,8 @@ class _$GameHubErrorOccurredImpl implements GameHubErrorOccurred {
     TResult? Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult? Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult? Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult? Function(int playerId, String nobleId)? nobleAwarded,
     TResult? Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,
@@ -3230,7 +3295,8 @@ class _$GameHubErrorOccurredImpl implements GameHubErrorOccurred {
     TResult Function(
             bool success, String? error, List<Map<String, dynamic>>? patch)?
         actionResult,
-    TResult Function(int currentPlayerId, int turnNumber)? turnChanged,
+    TResult Function(int currentPlayerId, int turnNumber, String? reason)?
+        turnChanged,
     TResult Function(int playerId, String nobleId)? nobleAwarded,
     TResult Function(int playerId, List<String> candidateNobleIds)?
         nobleChoiceRequired,

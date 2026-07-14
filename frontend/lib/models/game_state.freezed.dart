@@ -591,7 +591,12 @@ mixin _$GameState {
   int? get lastTurnPlayerId => throw _privateConstructorUsedError;
   int get sequence =>
       throw _privateConstructorUsedError; // StateSync 델타 적용 순서 검증 및 RequestResync에 사용
-  int? get currentPlayerId => throw _privateConstructorUsedError;
+  int? get currentPlayerId =>
+      throw _privateConstructorUsedError; // 피셔 룰 턴 제한시간(backend/Backend/Game/GameEngine.cs). key: userId(문자열),
+// value: 그 유저의 남은 시간뱅크(초, 최대 30). turnDeadlineUtc는 현재 턴이
+// 끝나는 UTC 시각이며 게임 종료 시 null.
+  Map<String, int> get timeBankSeconds => throw _privateConstructorUsedError;
+  DateTime? get turnDeadlineUtc => throw _privateConstructorUsedError;
 
   /// Serializes this GameState to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -621,7 +626,9 @@ abstract class $GameStateCopyWith<$Res> {
       GamePhase phase,
       int? lastTurnPlayerId,
       int sequence,
-      int? currentPlayerId});
+      int? currentPlayerId,
+      Map<String, int> timeBankSeconds,
+      DateTime? turnDeadlineUtc});
 }
 
 /// @nodoc
@@ -652,6 +659,8 @@ class _$GameStateCopyWithImpl<$Res, $Val extends GameState>
     Object? lastTurnPlayerId = freezed,
     Object? sequence = null,
     Object? currentPlayerId = freezed,
+    Object? timeBankSeconds = null,
+    Object? turnDeadlineUtc = freezed,
   }) {
     return _then(_value.copyWith(
       gameId: null == gameId
@@ -706,6 +715,14 @@ class _$GameStateCopyWithImpl<$Res, $Val extends GameState>
           ? _value.currentPlayerId
           : currentPlayerId // ignore: cast_nullable_to_non_nullable
               as int?,
+      timeBankSeconds: null == timeBankSeconds
+          ? _value.timeBankSeconds
+          : timeBankSeconds // ignore: cast_nullable_to_non_nullable
+              as Map<String, int>,
+      turnDeadlineUtc: freezed == turnDeadlineUtc
+          ? _value.turnDeadlineUtc
+          : turnDeadlineUtc // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
     ) as $Val);
   }
 }
@@ -731,7 +748,9 @@ abstract class _$$GameStateImplCopyWith<$Res>
       GamePhase phase,
       int? lastTurnPlayerId,
       int sequence,
-      int? currentPlayerId});
+      int? currentPlayerId,
+      Map<String, int> timeBankSeconds,
+      DateTime? turnDeadlineUtc});
 }
 
 /// @nodoc
@@ -760,6 +779,8 @@ class __$$GameStateImplCopyWithImpl<$Res>
     Object? lastTurnPlayerId = freezed,
     Object? sequence = null,
     Object? currentPlayerId = freezed,
+    Object? timeBankSeconds = null,
+    Object? turnDeadlineUtc = freezed,
   }) {
     return _then(_$GameStateImpl(
       gameId: null == gameId
@@ -814,6 +835,14 @@ class __$$GameStateImplCopyWithImpl<$Res>
           ? _value.currentPlayerId
           : currentPlayerId // ignore: cast_nullable_to_non_nullable
               as int?,
+      timeBankSeconds: null == timeBankSeconds
+          ? _value._timeBankSeconds
+          : timeBankSeconds // ignore: cast_nullable_to_non_nullable
+              as Map<String, int>,
+      turnDeadlineUtc: freezed == turnDeadlineUtc
+          ? _value.turnDeadlineUtc
+          : turnDeadlineUtc // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
     ));
   }
 }
@@ -834,13 +863,16 @@ class _$GameStateImpl extends _GameState {
       required this.phase,
       this.lastTurnPlayerId,
       required this.sequence,
-      this.currentPlayerId})
+      this.currentPlayerId,
+      final Map<String, int> timeBankSeconds = const {},
+      this.turnDeadlineUtc})
       : _playerOrder = playerOrder,
         _players = players,
         _tokenBank = tokenBank,
         _board = board,
         _decks = decks,
         _boardNobles = boardNobles,
+        _timeBankSeconds = timeBankSeconds,
         super._();
 
   factory _$GameStateImpl.fromJson(Map<String, dynamic> json) =>
@@ -926,10 +958,27 @@ class _$GameStateImpl extends _GameState {
 // StateSync 델타 적용 순서 검증 및 RequestResync에 사용
   @override
   final int? currentPlayerId;
+// 피셔 룰 턴 제한시간(backend/Backend/Game/GameEngine.cs). key: userId(문자열),
+// value: 그 유저의 남은 시간뱅크(초, 최대 30). turnDeadlineUtc는 현재 턴이
+// 끝나는 UTC 시각이며 게임 종료 시 null.
+  final Map<String, int> _timeBankSeconds;
+// 피셔 룰 턴 제한시간(backend/Backend/Game/GameEngine.cs). key: userId(문자열),
+// value: 그 유저의 남은 시간뱅크(초, 최대 30). turnDeadlineUtc는 현재 턴이
+// 끝나는 UTC 시각이며 게임 종료 시 null.
+  @override
+  @JsonKey()
+  Map<String, int> get timeBankSeconds {
+    if (_timeBankSeconds is EqualUnmodifiableMapView) return _timeBankSeconds;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_timeBankSeconds);
+  }
+
+  @override
+  final DateTime? turnDeadlineUtc;
 
   @override
   String toString() {
-    return 'GameState(gameId: $gameId, playerOrder: $playerOrder, players: $players, tokenBank: $tokenBank, board: $board, decks: $decks, boardNobles: $boardNobles, currentPlayerIndex: $currentPlayerIndex, turnNumber: $turnNumber, phase: $phase, lastTurnPlayerId: $lastTurnPlayerId, sequence: $sequence, currentPlayerId: $currentPlayerId)';
+    return 'GameState(gameId: $gameId, playerOrder: $playerOrder, players: $players, tokenBank: $tokenBank, board: $board, decks: $decks, boardNobles: $boardNobles, currentPlayerIndex: $currentPlayerIndex, turnNumber: $turnNumber, phase: $phase, lastTurnPlayerId: $lastTurnPlayerId, sequence: $sequence, currentPlayerId: $currentPlayerId, timeBankSeconds: $timeBankSeconds, turnDeadlineUtc: $turnDeadlineUtc)';
   }
 
   @override
@@ -957,7 +1006,11 @@ class _$GameStateImpl extends _GameState {
             (identical(other.sequence, sequence) ||
                 other.sequence == sequence) &&
             (identical(other.currentPlayerId, currentPlayerId) ||
-                other.currentPlayerId == currentPlayerId));
+                other.currentPlayerId == currentPlayerId) &&
+            const DeepCollectionEquality()
+                .equals(other._timeBankSeconds, _timeBankSeconds) &&
+            (identical(other.turnDeadlineUtc, turnDeadlineUtc) ||
+                other.turnDeadlineUtc == turnDeadlineUtc));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -976,7 +1029,9 @@ class _$GameStateImpl extends _GameState {
       phase,
       lastTurnPlayerId,
       sequence,
-      currentPlayerId);
+      currentPlayerId,
+      const DeepCollectionEquality().hash(_timeBankSeconds),
+      turnDeadlineUtc);
 
   /// Create a copy of GameState
   /// with the given fields replaced by the non-null parameter values.
@@ -1008,7 +1063,9 @@ abstract class _GameState extends GameState {
       required final GamePhase phase,
       final int? lastTurnPlayerId,
       required final int sequence,
-      final int? currentPlayerId}) = _$GameStateImpl;
+      final int? currentPlayerId,
+      final Map<String, int> timeBankSeconds,
+      final DateTime? turnDeadlineUtc}) = _$GameStateImpl;
   const _GameState._() : super._();
 
   factory _GameState.fromJson(Map<String, dynamic> json) =
@@ -1039,7 +1096,14 @@ abstract class _GameState extends GameState {
   @override
   int get sequence; // StateSync 델타 적용 순서 검증 및 RequestResync에 사용
   @override
-  int? get currentPlayerId;
+  int?
+      get currentPlayerId; // 피셔 룰 턴 제한시간(backend/Backend/Game/GameEngine.cs). key: userId(문자열),
+// value: 그 유저의 남은 시간뱅크(초, 최대 30). turnDeadlineUtc는 현재 턴이
+// 끝나는 UTC 시각이며 게임 종료 시 null.
+  @override
+  Map<String, int> get timeBankSeconds;
+  @override
+  DateTime? get turnDeadlineUtc;
 
   /// Create a copy of GameState
   /// with the given fields replaced by the non-null parameter values.

@@ -9,27 +9,17 @@ part of 'friend_request.dart';
 _$FriendRequestImpl _$$FriendRequestImplFromJson(Map<String, dynamic> json) =>
     _$FriendRequestImpl(
       requestId: (json['requestId'] as num).toInt(),
-      fromUserId: (json['fromUserId'] as num).toInt(),
-      toUserId: (json['toUserId'] as num?)?.toInt(),
-      fromNickname: json['fromNickname'] as String?,
-      status:
-          $enumDecodeNullable(_$FriendRequestStatusEnumMap, json['status']) ??
-              FriendRequestStatus.pending,
+      userId: (json['userId'] as num).toInt(),
+      nickname: json['nickname'] as String,
+      avatarUrl: json['avatarUrl'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
 
 Map<String, dynamic> _$$FriendRequestImplToJson(_$FriendRequestImpl instance) =>
     <String, dynamic>{
       'requestId': instance.requestId,
-      'fromUserId': instance.fromUserId,
-      'toUserId': instance.toUserId,
-      'fromNickname': instance.fromNickname,
-      'status': _$FriendRequestStatusEnumMap[instance.status]!,
+      'userId': instance.userId,
+      'nickname': instance.nickname,
+      'avatarUrl': instance.avatarUrl,
       'createdAt': instance.createdAt.toIso8601String(),
     };
-
-const _$FriendRequestStatusEnumMap = {
-  FriendRequestStatus.pending: 'PENDING',
-  FriendRequestStatus.accepted: 'ACCEPTED',
-  FriendRequestStatus.rejected: 'REJECTED',
-};

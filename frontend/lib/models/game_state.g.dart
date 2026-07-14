@@ -108,6 +108,13 @@ _$GameStateImpl _$$GameStateImplFromJson(Map<String, dynamic> json) =>
       lastTurnPlayerId: (json['lastTurnPlayerId'] as num?)?.toInt(),
       sequence: (json['sequence'] as num).toInt(),
       currentPlayerId: (json['currentPlayerId'] as num?)?.toInt(),
+      timeBankSeconds: (json['timeBankSeconds'] as Map<String, dynamic>?)?.map(
+            (k, e) => MapEntry(k, (e as num).toInt()),
+          ) ??
+          const {},
+      turnDeadlineUtc: json['turnDeadlineUtc'] == null
+          ? null
+          : DateTime.parse(json['turnDeadlineUtc'] as String),
     );
 
 Map<String, dynamic> _$$GameStateImplToJson(_$GameStateImpl instance) =>
@@ -125,6 +132,8 @@ Map<String, dynamic> _$$GameStateImplToJson(_$GameStateImpl instance) =>
       'lastTurnPlayerId': instance.lastTurnPlayerId,
       'sequence': instance.sequence,
       'currentPlayerId': instance.currentPlayerId,
+      'timeBankSeconds': instance.timeBankSeconds,
+      'turnDeadlineUtc': instance.turnDeadlineUtc?.toIso8601String(),
     };
 
 const _$GamePhaseEnumMap = {
