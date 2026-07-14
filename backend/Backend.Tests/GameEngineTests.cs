@@ -438,16 +438,31 @@ public class GameEngineTests
     }
 
     [Fact]
-    public void ResolveTimeout_WithExcessTokens_StillAdvancesTurnUnconditionally()
+    public void ResolveTimeout_WithExcessTokens_RandomlyDiscardsDownToTenAndAdvancesTurn()
     {
         var state = CreateState(1, 2);
         state.Players[1].Tokens[GemType.Diamond] = 4;
         state.Players[1].Tokens[GemType.Sapphire] = 4;
         state.Players[1].Tokens[GemType.Emerald] = 3; // 11개, 원래는 반납이 필요한 상태
+        var bankBefore = state.TokenBank.Values.Sum();
 
-        GameEngine.ResolveTimeout(state, 1);
+        GameEngine.ResolveTimeout(state, 1, new Random(42));
 
         Assert.Equal(2, state.CurrentPlayerId);
-        Assert.Equal(11, state.Players[1].TotalTokens); // 자동 반납 없이 그대로 유지
+        Assert.Equal(10, state.Players[1].TotalTokens); // 서버가 1개 무작위로 반납해 정확히 10개
+        Assert.Equal(bankBefore + 1, state.TokenBank.Values.Sum()); // 반납된 토큰은 은행으로 돌아감
+    }
+
+    [Fact]
+    public void ResolveTimeout_WithExcessTokens_NeverDiscardsBelowTen()
+    {
+        var state = CreateState(1, 2);
+        state.Players[1].Tokens[GemType.Diamond] = 5;
+        state.Players[1].Tokens[GemType.Sapphire] = 5;
+        state.Players[1].Tokens[GemType.Emerald] = 3; // 13개
+
+        GameEngine.ResolveTimeout(state, 1, new Random(1));
+
+        Assert.Equal(10, state.Players[1].TotalTokens);
     }
 }

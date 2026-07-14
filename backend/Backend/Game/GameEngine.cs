@@ -248,16 +248,18 @@ public static class GameEngine
     /// <summary>
     /// 턴 제한시간 초과 시 서버가 대신 호출하는 무조건 패스. 노블 선택 대기 중이었다면
     /// 포기 처리(PendingNobleChoiceIds는 전역 상태라 안 지우면 다음 플레이어까지 막히므로 필수)하고,
+    /// 토큰을 10개 초과 보유 중이었다면 정확히 10개가 되도록 무작위로 반납시킨 뒤,
     /// 그 외에는 아무 것도 확인/자동 수행하지 않고 무조건 다음 플레이어에게 턴을 넘긴다.
-    /// 토큰 10개 초과 보유 상태는 그대로 둔다 — 플레이어별 체크(EnsureNotAwaitingDiscard)라
-    /// 다른 사람의 턴을 막지 않고, 본인은 다음 자기 턴에 DiscardTokens 외엔 행동할 수 없어 자연히 유도된다.
     /// </summary>
-    public static ActionOutcome ResolveTimeout(GameState state, int playerId)
+    public static ActionOutcome ResolveTimeout(GameState state, int playerId, Random? random = null)
     {
         if (state.CurrentPlayerId != playerId)
             throw new GameRuleException("NOT_YOUR_TURN", "이미 턴이 넘어갔습니다.");
 
+        random ??= new Random();
+
         state.PendingNobleChoiceIds = [];
+        RandomlyDiscardExcessTokens(state, state.Players[playerId], random);
         state.Sequence++;
 
         var gameOver = AdvanceTurnAndResetClock(state, playerId);
@@ -266,6 +268,25 @@ public static class GameEngine
 
         var (winnerId, scores) = FinishGame(state);
         return new ActionOutcome(false, [], [], true, winnerId, scores, TimedOut: true);
+    }
+
+    /// <summary>
+    /// 보유 토큰이 10개를 초과하면, 초과분만큼 색상을 무작위로 골라 한 개씩 은행에 반납한다.
+    /// ResolveTimeout 전용 — 사람이 직접 고르는 DiscardTokens와 달리 서버가 대신 결정한다.
+    /// </summary>
+    private static void RandomlyDiscardExcessTokens(GameState state, PlayerState player, Random random)
+    {
+        var excess = player.TotalTokens - 10;
+        for (var i = 0; i < excess; i++)
+        {
+            var heldColors = player.Tokens.Where(kv => kv.Value > 0).Select(kv => kv.Key).ToList();
+            if (heldColors.Count == 0)
+                break; // 방어적: 이미 10개 이하인데 호출된 경우 등
+
+            var color = heldColors[random.Next(heldColors.Count)];
+            player.Tokens[color]--;
+            state.TokenBank[color] = state.TokenBank.GetValueOrDefault(color) + 1;
+        }
     }
 
     /// <summary>
