@@ -4,9 +4,17 @@
 // 동안(로비 포함) 상시 연결을 유지하도록 설계되어 있습니다.
 
 import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:signalr_netcore/signalr_client.dart';
 import '../models/social_hub_event.dart';
 import '../utils/constants.dart';
+
+/// 앱 전역에서 공유하는 단일 SocialSocket 인스턴스. 로그인 상태 진입/이탈은
+/// AuthController가, 이벤트 구독은 각 화면(FriendController 등)이 이 하나의
+/// 인스턴스를 통해 처리합니다 — 화면마다 별도로 연결을 만들면 SocialHub가
+/// "로그인 중"으로 보는 연결이 화면 진입 여부에 종속돼 동시접속 차단 판정이
+/// 무효화됩니다.
+final socialSocketProvider = Provider<SocialSocket>((ref) => SocialSocketService());
 
 abstract class SocialSocket {
   Stream<SocialHubEvent> get events;
@@ -14,6 +22,11 @@ abstract class SocialSocket {
   Future<void> connect(String accessToken);
   Future<void> sendFriendMessage({required int toUserId, required String text});
   Future<void> setPresence(String status);
+
+  /// 연결만 끊고 [events] 스트림은 재사용할 수 있도록 살려둡니다. 재로그인 시
+  /// [connect]를 다시 불러 이어서 쓸 수 있습니다. 앱 종료 시에만 [dispose]를
+  /// 씁니다.
+  Future<void> disconnect();
   Future<void> dispose();
 }
 
@@ -64,6 +77,12 @@ class SocialSocketService implements SocialSocket {
     await _hubConnection?.invoke('SetPresence', args: [
       {'status': status},
     ]);
+  }
+
+  @override
+  Future<void> disconnect() async {
+    await _hubConnection?.stop();
+    _hubConnection = null;
   }
 
   @override

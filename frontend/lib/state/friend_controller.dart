@@ -76,7 +76,7 @@ final friendControllerProvider =
   final controller = FriendController(
     ref.read(friendServiceProvider),
     ref.read(userServiceProvider),
-    SocialSocketService(),
+    ref.read(socialSocketProvider),
   );
   ref.onDispose(controller.disposeSocket);
   return controller;
@@ -91,18 +91,19 @@ class FriendController extends StateNotifier<FriendsState> {
   FriendController(this._friendService, this._userService, this._socket)
       : super(const FriendsInitial());
 
-  Future<void> load({String? accessToken}) async {
+  /// SocialHub 연결은 로그인 상태가 유지되는 동안 AuthController가 앱 전역
+  /// 공유 소켓으로 상시 유지하므로, 여기서는 이미 연결된 소켓의 이벤트 구독만
+  /// 맡는다 — 이 화면을 나갈 때 소켓 자체를 끊으면(disposeSocket) 다른
+  /// 화면에서의 프레즌스 연결까지 끊어지므로 그렇게 하지 않는다.
+  Future<void> load() async {
     state = const FriendsLoading();
     try {
       final friends = await _friendService.getFriends();
       final requests = await _friendService.getRequests();
       state = FriendsLoaded(friends: friends, incomingRequests: requests);
 
-      if (accessToken != null) {
-        _sub?.cancel();
-        _sub = _socket.events.listen(_onEvent);
-        await _socket.connect(accessToken);
-      }
+      _sub?.cancel();
+      _sub = _socket.events.listen(_onEvent);
     } catch (e) {
       state = FriendsError(e.toString());
     }
@@ -198,8 +199,9 @@ class FriendController extends StateNotifier<FriendsState> {
     state = update(current);
   }
 
+  /// 공유 소켓 자체는 AuthController가 로그인/로그아웃에 맞춰 관리하므로,
+  /// 이 화면을 나갈 때는 로컬 이벤트 구독만 취소한다(소켓 dispose는 하지 않음).
   Future<void> disposeSocket() async {
     await _sub?.cancel();
-    await _socket.dispose();
   }
 }

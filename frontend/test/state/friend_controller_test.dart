@@ -81,6 +81,9 @@ class _FakeSocialSocket implements SocialSocket {
   Future<void> setPresence(String status) async {}
 
   @override
+  Future<void> disconnect() async => calls.add('disconnect');
+
+  @override
   Future<void> dispose() async => _controller.close();
 
   void emit(SocialHubEvent event) => _controller.add(event);
@@ -97,19 +100,22 @@ void main() {
     controller = FriendController(friendService, _FakeUserService(), socket);
   });
 
-  test('load는 친구/요청 목록을 불러오고 SocialHub에 연결한다', () async {
-    await controller.load(accessToken: 'token');
+  test('load는 친구/요청 목록을 불러오고 이미 연결된 SocialHub 이벤트를 구독한다', () async {
+    await controller.load();
 
     final state = controller.state as FriendsLoaded;
     expect(state.friends, hasLength(2));
     expect(state.incomingRequests.single.fromNickname, '은빛상인');
     expect(state.online.single.nickname, '루비사냥꾼');
     expect(state.offline.single.nickname, '도시의상인');
-    expect(socket.calls, contains('connect'));
+    // SocialHub 연결/해제는 이제 AuthController 책임이라 load()는 connect를
+    // 부르지 않는다 — FriendStatusChanged 등 이벤트가 잘 도착하는지는 아래
+    // 다른 테스트들이 구독이 실제로 걸렸는지로 검증한다.
+    expect(socket.calls, isNot(contains('connect')));
   });
 
   test('FriendStatusChanged 이벤트가 오면 해당 친구 상태만 바뀐다', () async {
-    await controller.load(accessToken: 'token');
+    await controller.load();
 
     socket.emit(const SocialHubEvent.friendStatusChanged(
       friendUserId: 2,
@@ -122,7 +128,7 @@ void main() {
   });
 
   test('FriendMessageReceived 이벤트가 오면 해당 친구의 chatHistory에 쌓인다', () async {
-    await controller.load(accessToken: 'token');
+    await controller.load();
 
     socket.emit(SocialHubEvent.friendMessageReceived(
       fromUserId: 1,
@@ -137,7 +143,7 @@ void main() {
   });
 
   test('sendChatMessage는 소켓으로 보내고 로컬에도(mine=true) 남긴다', () async {
-    await controller.load(accessToken: 'token');
+    await controller.load();
 
     await controller.sendChatMessage(1, '안녕하세요');
 
@@ -147,7 +153,7 @@ void main() {
   });
 
   test('acceptRequest는 요청 목록에서 지우고 friends에 추가한다', () async {
-    await controller.load(accessToken: 'token');
+    await controller.load();
     final request = (controller.state as FriendsLoaded).incomingRequests.single;
 
     await controller.acceptRequest(request);

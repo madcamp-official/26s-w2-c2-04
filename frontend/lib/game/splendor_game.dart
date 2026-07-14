@@ -98,7 +98,15 @@ class SplendorGame extends FlameGame {
     if (!isLoaded) return;
     final state = _latestState;
     if (state != null) {
-      _board.updateBoard(state, nobleChoiceIds: _nobleChoiceIds);
+      // 액션 바가 늘어나거나 줄어들 때(예: 토큰 1개를 처음 선택해 버튼 줄이
+      // 나타날 때)도 이 콜백이 불려 보드를 통째로 다시 그린다. 이때
+      // applySelectionHighlight를 다시 불러주지 않으면, 새로 만들어진
+      // GemTokenComponent/CardComponent는 선택 상태 없이(테두리 없이) 시작해서
+      // 이미 선택돼 있던 토큰의 테두리가 사라진 것처럼 보인다 — 이후 다른
+      // 토큰을 선택해 이 메서드가 다시 불려야만 현재 선택이 다시 반영됐다.
+      _board.updateBoard(state, nobleChoiceIds: _nobleChoiceIds).then((_) {
+        _board.applySelectionHighlight(selection.value);
+      });
     }
   }
 
