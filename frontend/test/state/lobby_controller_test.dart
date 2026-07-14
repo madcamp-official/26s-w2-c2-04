@@ -46,6 +46,9 @@ class _FakeRoomService implements RoomService {
   Future<void> leaveRoom(int roomId) async {}
 
   @override
+  Future<GameRoom> setReady(int roomId, bool ready) async => _room(roomId);
+
+  @override
   Future<({int gameId, String phase})> startGame(int roomId) async =>
       (gameId: 1, phase: 'PLAYING');
 

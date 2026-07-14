@@ -24,6 +24,7 @@ class MyApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       navigatorKey: rootNavigatorKey,
+      navigatorObservers: [playRouteObserver],
       title: 'Splendor Multiplayer',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),

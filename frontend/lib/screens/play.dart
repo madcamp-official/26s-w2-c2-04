@@ -46,7 +46,7 @@ class PlayScreen extends ConsumerStatefulWidget {
   ConsumerState<PlayScreen> createState() => _PlayScreenState();
 }
 
-class _PlayScreenState extends ConsumerState<PlayScreen> {
+class _PlayScreenState extends ConsumerState<PlayScreen> with RouteAware {
   final _chatController = TextEditingController();
   late final SplendorGame _splendorGame;
 
@@ -136,11 +136,28 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   }
 
   @override
-  void dispose() {
-    // 이 화면이 스택에서 완전히 빠질 때(뒤로가기 포함)는 배지가 다시 보일 수
-    // 있어야 한다 — activeRoomProvider 자체는 여기서 건드리지 않는다(그 방에
-    // 아직 들어가 있다는 사실은 유효하므로, 배지 자체의 표시 여부만 바꾼다).
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 이 화면이 얹혀 있는 라우트의 pop을 didPop으로 통지받기 위해 구독한다.
+    final route = ModalRoute.of(context);
+    if (route != null) playRouteObserver.subscribe(this, route);
+  }
+
+  /// 이 화면의 라우트가 pop되는 "순간"(뒤로가기/나가기 버튼의 이벤트 핸들러 안에서
+  /// Navigator가 동기 호출) 배지 숨김 플래그를 내린다 — activeRoomProvider 자체는
+  /// 건드리지 않는다(그 방에 아직 들어가 있다는 사실은 유효하므로, 배지 표시
+  /// 여부만 바꾼다). dispose는 pop 애니메이션이 끝난 뒤 프레임의 finalizeTree
+  /// 단계에서야 실행돼 provider 변경 타이밍이 위태롭고(빌드 중 변경 금지, idle이면
+  /// postFrameCallback이 영영 안 옴), teardown 중 예외가 나면 통째로 건너뛰어질 수
+  /// 있어 여기서 처리하는 것이 구조적으로 안전하다.
+  @override
+  void didPop() {
     ref.read(roomScreenVisibleProvider.notifier).state = false;
+  }
+
+  @override
+  void dispose() {
+    playRouteObserver.unsubscribe(this);
     _chatController.dispose();
     super.dispose();
   }
@@ -240,7 +257,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
             onStart: _startGame,
             onToggleReady: (ready) => ref
                 .read(gameControllerProvider.notifier)
-                .setReady(myUserId: _myUserId, ready: ready),
+                .setReady(ready: ready),
           ),
         GameDisconnected() => const Center(child: CircularProgressIndicator()),
       },

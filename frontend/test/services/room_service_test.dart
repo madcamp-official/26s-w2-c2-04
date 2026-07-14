@@ -72,6 +72,35 @@ void main() {
     });
   });
 
+  group('RoomService.setReady', () {
+    test('POST /rooms/{roomId}/ready에 ready 바디를 보내고 갱신된 방을 파싱한다', () async {
+      final fake = FakeApiClient((method, path, {query, body}) {
+        expect(method, 'POST');
+        expect(path, '/rooms/5566/ready');
+        expect(body, {'ready': true});
+        return http.Response(
+          jsonEncode({
+            'roomId': 5566,
+            'hostId': 1024,
+            'status': 'WAITING',
+            'maxPlayers': 4,
+            'players': [
+              {'userId': 1024, 'nickname': '스플랜더왕', 'isReady': false},
+              {'userId': 2048, 'nickname': '도시의상인', 'isReady': true},
+            ],
+            'createdAt': '2026-07-10T09:10:00Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      });
+
+      final room = await RoomService(client: fake).setReady(5566, true);
+
+      expect(room.players.firstWhere((p) => p.id == 2048).isReady, isTrue);
+    });
+  });
+
   group('오류 처리', () {
     test('4xx/5xx 응답이면 ApiException을 던진다', () async {
       final fake = FakeApiClient((method, path, {query, body}) {
