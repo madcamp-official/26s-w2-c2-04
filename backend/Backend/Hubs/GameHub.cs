@@ -174,29 +174,43 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
         }
 
         await stateStore.SaveAsync(roomId, state);
+        await BroadcastActionOutcomeAsync(
+            roomId, userId, actionType, payload, state, outcome, previousPlayerId, db, stateStore,
+            Clients.Group(GameHubMessages.GroupName(roomId)), Clients.Caller);
+    }
 
+    /// <summary>
+    /// 액션 처리 결과를 방(그룹)에 알리는 공통 꼬리부. 라이브 Hub 호출(HandleActionAsync)과
+    /// TurnTimeoutWorker(백그라운드에서 턴 타임아웃을 처리)가 같은 브로드캐스트/기록 로직을 공유한다.
+    /// callerClient는 NobleChoiceRequired를 행위자 본인에게만 보낼 때 쓰며, 워커 호출처럼
+    /// 특정 caller가 없는 경우(타임아웃 결과는 NobleChoiceCandidateIds가 항상 비어 있어 실제로 안 쓰임) null이면 된다.
+    /// </summary>
+    internal static async Task BroadcastActionOutcomeAsync(
+        int roomId, int actingPlayerId, string actionType, object payload,
+        GameState state, ActionOutcome outcome, int previousPlayerId,
+        AppDbContext db, GameStateStore stateStore, IClientProxy group, IClientProxy? callerClient)
+    {
         var game = await db.Games.FirstAsync(g => g.RoomId == roomId && g.Status == GameStatus.Playing);
         db.GameActions.Add(new GameAction
         {
             GameId = game.Id,
             Sequence = state.Sequence,
             TurnNumber = state.TurnNumber,
-            PlayerId = userId,
+            PlayerId = actingPlayerId,
             ActionType = actionType,
             PayloadJson = JsonSerializer.Serialize(payload),
         });
 
-        var group = Clients.Group(GameHubMessages.GroupName(roomId));
         await group.SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
 
         foreach (var nobleId in outcome.AutoAwardedNobleIds)
-            await group.SendAsync("NobleAwarded", new { playerId = userId, nobleId });
+            await group.SendAsync("NobleAwarded", new { playerId = actingPlayerId, nobleId });
 
-        if (outcome.NobleChoiceCandidateIds.Count > 0)
-            await Clients.Caller.SendAsync("NobleChoiceRequired", new { playerId = userId, candidateNobleIds = outcome.NobleChoiceCandidateIds });
+        if (outcome.NobleChoiceCandidateIds.Count > 0 && callerClient is not null)
+            await callerClient.SendAsync("NobleChoiceRequired", new { playerId = actingPlayerId, candidateNobleIds = outcome.NobleChoiceCandidateIds });
 
         if (outcome.FinalRoundTriggered)
-            await group.SendAsync("FinalRoundTriggered", new { triggeredBy = userId, lastTurnPlayerId = state.LastTurnPlayerId });
+            await group.SendAsync("FinalRoundTriggered", new { triggeredBy = actingPlayerId, lastTurnPlayerId = state.LastTurnPlayerId });
 
         if (outcome.GameOver)
         {
@@ -219,7 +233,12 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
         }
         else if (state.CurrentPlayerId != previousPlayerId)
         {
-            await group.SendAsync("TurnChanged", new { currentPlayerId = state.CurrentPlayerId, turnNumber = state.TurnNumber });
+            await group.SendAsync("TurnChanged", new
+            {
+                currentPlayerId = state.CurrentPlayerId,
+                turnNumber = state.TurnNumber,
+                reason = outcome.TimedOut ? "timeout" : "action",
+            });
         }
 
         await db.SaveChangesAsync();

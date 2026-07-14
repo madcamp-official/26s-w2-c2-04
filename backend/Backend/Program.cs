@@ -38,6 +38,7 @@ builder.Services.AddSingleton<PresenceStore>();
 builder.Services.AddSingleton<RoomInviteStore>();
 builder.Services.AddHostedService<MatchmakingWorker>();
 builder.Services.AddHostedService<RoomDepartureWorker>();
+builder.Services.AddHostedService<TurnTimeoutWorker>();
 
 builder.Services
     .AddSignalR()

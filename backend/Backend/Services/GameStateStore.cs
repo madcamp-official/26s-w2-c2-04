@@ -18,11 +18,19 @@ public class GameStateStore(IConnectionMultiplexer redis)
     private static string StateKey(int gameId) => $"game:{gameId}:state";
     private static string LockKey(int gameId) => $"game:{gameId}:lock";
     private static string ConnectedSetKey(int gameId) => $"game:{gameId}:connected";
+    private const string TurnDeadlineSetKey = "game:turn-deadlines";
 
     public async Task SaveAsync(int gameId, GameState state)
     {
         var json = JsonSerializer.Serialize(state);
         await _db.StringSetAsync(StateKey(gameId), json, TimeSpan.FromHours(6));
+
+        // TurnTimeoutWorker가 매 틱 DB 스캔 없이 만료된 게임만 O(log n)으로 골라내도록,
+        // 상태 저장 시 현재 턴 마감 시각을 별도 sorted set에도 같이 반영해둔다.
+        if (state.TurnDeadlineUtc is { } deadline)
+            await _db.SortedSetAddAsync(TurnDeadlineSetKey, gameId, new DateTimeOffset(deadline).ToUnixTimeMilliseconds());
+        else
+            await _db.SortedSetRemoveAsync(TurnDeadlineSetKey, gameId);
     }
 
     public async Task<GameState?> LoadAsync(int gameId)
@@ -32,7 +40,18 @@ public class GameStateStore(IConnectionMultiplexer redis)
     }
 
     public Task RemoveAsync(int gameId) =>
-        Task.WhenAll(_db.KeyDeleteAsync(StateKey(gameId)), _db.KeyDeleteAsync(ConnectedSetKey(gameId)));
+        Task.WhenAll(
+            _db.KeyDeleteAsync(StateKey(gameId)),
+            _db.KeyDeleteAsync(ConnectedSetKey(gameId)),
+            _db.SortedSetRemoveAsync(TurnDeadlineSetKey, gameId));
+
+    /// <summary>턴 마감 시각(UTC)이 지금 이전인, 즉 타임아웃 처리가 필요한 게임 id 목록.</summary>
+    public async Task<int[]> GetExpiredTurnGameIdsAsync(DateTime nowUtc)
+    {
+        var max = new DateTimeOffset(nowUtc).ToUnixTimeMilliseconds();
+        var values = await _db.SortedSetRangeByScoreAsync(TurnDeadlineSetKey, double.NegativeInfinity, max);
+        return values.Select(v => (int)v).ToArray();
+    }
 
     /// <summary>
     /// 이 방(게임)에 실제로 Hub JoinRoom을 한 번이라도 호출한 유저를 기록한다.

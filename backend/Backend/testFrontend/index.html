@@ -403,7 +403,8 @@
 
 <section>
   <h2>게임 상태</h2>
-  <div id="gameSummary" style="font-size:13px;margin-bottom:8px;color:#333">아직 상태 없음 (JoinRoom을 호출하면 StateSync를 받습니다)</div>
+  <div id="gameSummary" style="font-size:13px;margin-bottom:4px;color:#333">아직 상태 없음 (JoinRoom을 호출하면 StateSync를 받습니다)</div>
+  <div id="turnTimer" style="font-size:13px;margin-bottom:8px;color:#a33">-</div>
   <div id="gameBoard"></div>
   <details style="margin-top:10px">
     <summary style="cursor:pointer;font-size:12px;color:#555">원본 GameState JSON 보기</summary>
@@ -744,7 +745,9 @@ async function connectHub() {
     .build();
 
   connection.on('StateSync', (msg) => { logGameEvent('StateSync', msg); renderGameState(msg.state); });
-  connection.on('TurnChanged', (msg) => logGameEvent('TurnChanged', msg));
+  connection.on('TurnChanged', (msg) => {
+    logGameEvent(msg.reason === 'timeout' ? 'TurnChanged (제한시간 초과)' : 'TurnChanged', msg);
+  });
   connection.on('PlayerJoined', (msg) => { logGameEvent('PlayerJoined', msg); addRoomMember(msg.userId, msg.nickname); refreshRooms(); });
   connection.on('PlayerLeft', (msg) => { logGameEvent('PlayerLeft', msg); removeRoomMember(msg.userId); refreshRooms(); });
   connection.on('HostChanged', (msg) => { logGameEvent('HostChanged', msg); setRoomHost(msg.newHostId); refreshRooms(); });
@@ -951,6 +954,11 @@ document.getElementById('btnRequestResync').addEventListener('click', () => {
   invokeHub('RequestResync', id, lastSequence);
 });
 
+// 턴 제한시간(피셔 룰): 서버가 StateSync에 실어 보내는 turnDeadlineUtc/timeBankSeconds를
+// 저장해두고, updateTurnTimer()가 로컬 시계로 매 200ms 카운트다운만 갱신한다(서버가 authoritative).
+let turnDeadlineUtc = null;
+let timeBankSeconds = {};
+
 function renderGameState(gs) {
   document.getElementById('gameStateRaw').textContent = JSON.stringify(gs, null, 2);
 
@@ -958,6 +966,10 @@ function renderGameState(gs) {
     `<b>Turn</b> ${gs.turnNumber} &nbsp; <b>CurrentPlayer</b> ${gs.currentPlayerId} &nbsp; ` +
     `<b>Phase</b> ${gs.phase} &nbsp; <b>Sequence</b> ${gs.sequence} &nbsp; ` +
     `<b>LastTurnPlayer</b> ${gs.lastTurnPlayerId ?? '-'}`;
+
+  turnDeadlineUtc = gs.turnDeadlineUtc ? new Date(gs.turnDeadlineUtc) : null;
+  timeBankSeconds = gs.timeBankSeconds || {};
+  updateTurnTimer();
 
   const board = document.getElementById('gameBoard');
   board.innerHTML = '';
@@ -1006,14 +1018,30 @@ function playerCard(p, currentPlayerId) {
   const tokens = Object.entries(p.tokens || {}).map(([k, v]) => `${k}:${v}`).join(' ') || '-';
   const bonuses = Object.entries(p.bonuses || {}).map(([k, v]) => `${k}:${v}`).join(' ') || '-';
   const isCurrent = p.userId === currentPlayerId;
+  const bank = timeBankSeconds[p.userId] ?? timeBankSeconds[String(p.userId)];
   return `<div class="player-card ${isCurrent ? 'current' : ''}">
     ${isCurrent ? '👉 ' : ''}<b>User ${p.userId}</b> — points: ${p.points ?? '?'} /
     reserved: ${(p.reservedCards || []).length} / purchased: ${(p.purchasedCards || []).length} / nobles: ${(p.nobles || []).length}
+    ${bank !== undefined ? ` / bank: ${bank}s` : ''}
     <br>tokens: ${tokens}
     <br>bonuses: ${bonuses}
     ${(p.reservedCards || []).length ? `<br>reservedCardIds: ${p.reservedCards.map((c) => c.id).join(', ')}` : ''}
   </div>`;
 }
+
+// 피셔 룰 턴 타이머 표시(README 7-1 참고). 마감 5초 이하면 붉게 강조한다.
+function updateTurnTimer() {
+  const el = document.getElementById('turnTimer');
+  if (!turnDeadlineUtc) {
+    el.textContent = '';
+    return;
+  }
+  const remaining = (turnDeadlineUtc.getTime() - Date.now()) / 1000;
+  const clamped = Math.max(0, remaining);
+  el.textContent = `⏱ 남은 시간: ${clamped.toFixed(1)}초`;
+  el.style.color = clamped <= 5 ? '#c0392b' : '#333';
+}
+setInterval(updateTurnTimer, 200);
 
 // ── 랭킹전 매칭 / 리더보드 ──────────────────────────────────────────
 // 매칭은 이제 즉시 방에 들어가는 게 아니라 대기열에 등록되고, 서버가 비슷한 MMR끼리 묶이면
