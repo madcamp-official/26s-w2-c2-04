@@ -12,6 +12,10 @@ class GemTokenComponent extends PositionComponent with TapCallbacks {
   final Sprite sprite;
   final void Function(String gem) onTap;
 
+  /// 골드처럼 TakeTokens로 직접 선택할 수 없는 토큰은 false로 넘겨 탭을
+  /// 무시한다(선택 테두리/배지도 절대 표시되지 않음).
+  final bool selectable;
+
   int _selectedCount;
   RectangleComponent? _selectionRing;
   TextComponent? _selectedBadge;
@@ -23,6 +27,7 @@ class GemTokenComponent extends PositionComponent with TapCallbacks {
     required this.onTap,
     required Vector2 position,
     required Vector2 size,
+    this.selectable = true,
     int selectedCount = 0,
     super.priority,
   })  : _selectedCount = selectedCount,
@@ -95,6 +100,6 @@ class GemTokenComponent extends PositionComponent with TapCallbacks {
 
   @override
   void onTapUp(TapUpEvent event) {
-    if (count > 0) onTap(gem);
+    if (count > 0 && selectable) onTap(gem);
   }
 }

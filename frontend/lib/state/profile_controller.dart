@@ -1,8 +1,7 @@
-// 프로필 화면(본인 또는 친구)의 로딩 상태를 관리합니다.
+// 프로필 화면(본인 또는 다른 유저)의 로딩 상태를 관리합니다.
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_profile.dart';
-import '../models/user_stats.dart';
 import '../services/user_service.dart';
 
 sealed class ProfileState {
@@ -19,8 +18,7 @@ class ProfileLoading extends ProfileState {
 
 class ProfileLoaded extends ProfileState {
   final UserProfile profile;
-  final UserStats stats;
-  const ProfileLoaded({required this.profile, required this.stats});
+  const ProfileLoaded({required this.profile});
 }
 
 class ProfileError extends ProfileState {
@@ -39,26 +37,13 @@ class ProfileController extends StateNotifier<ProfileState> {
   final UserService _userService;
   ProfileController(this._userService) : super(const ProfileInitial());
 
-  Future<void> load(int userId) async {
+  /// userId를 안 주면(본인 프로필) GET /profile/me, 주면 GET /profile/{userId}.
+  Future<void> load({int? userId}) async {
     state = const ProfileLoading();
     try {
-      final profile = await _userService.getProfile(userId);
-      final stats = await _userService.getStats(userId);
-      state = ProfileLoaded(profile: profile, stats: stats);
-    } catch (e) {
-      state = ProfileError(e.toString());
-    }
-  }
-
-  Future<void> updateNickname(String nickname) async {
-    final current = state;
-    if (current is! ProfileLoaded) return;
-    try {
-      final updated = await _userService.updateMe(nickname: nickname);
-      state = ProfileLoaded(
-        profile: current.profile.copyWith(nickname: updated.nickname),
-        stats: current.stats,
-      );
+      final profile =
+          userId == null ? await _userService.getMyProfile() : await _userService.getProfile(userId);
+      state = ProfileLoaded(profile: profile);
     } catch (e) {
       state = ProfileError(e.toString());
     }

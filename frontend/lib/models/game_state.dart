@@ -78,6 +78,11 @@ class GameState with _$GameState {
     int? lastTurnPlayerId,
     required int sequence, // StateSync 델타 적용 순서 검증 및 RequestResync에 사용
     int? currentPlayerId,
+    // 피셔 룰 턴 제한시간(backend/Backend/Game/GameEngine.cs). key: userId(문자열),
+    // value: 그 유저의 남은 시간뱅크(초, 최대 30). turnDeadlineUtc는 현재 턴이
+    // 끝나는 UTC 시각이며 게임 종료 시 null.
+    @Default({}) Map<String, int> timeBankSeconds,
+    DateTime? turnDeadlineUtc,
   }) = _GameState;
 
   factory GameState.fromJson(Map<String, dynamic> json) =>

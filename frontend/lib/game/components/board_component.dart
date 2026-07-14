@@ -13,6 +13,7 @@ import '../assets.dart';
 import '../board_selection.dart';
 import '../logic/game_rules.dart';
 import 'card_component.dart';
+import 'deck_back_component.dart';
 import 'gem_component.dart';
 import 'noble_component.dart';
 
@@ -33,9 +34,43 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
 
   final List<CardComponent> _cardComponents = [];
   final List<GemTokenComponent> _gemComponents = [];
-  final List<SpriteComponent> _deckBackComponents = [];
+  final List<DeckBackComponent> _deckBackComponents = [];
   final List<NobleComponent> _nobleComponents = [];
   int _generation = 0;
+
+  /// 티어별 "자리" 배정(카드 id, 자리 순서 고정). 백엔드는 카드가 팔리면
+  /// 목록에서 빼고 새 카드를 맨 뒤에 추가하는 평평한 리스트라서, 매 StateSync의
+  /// board[tier] 순서를 그대로 그리면 팔린 카드 뒤의 모든 카드가 한 칸씩
+  /// 당겨진 것처럼 보인다. 이전 자리 배정을 기억해뒀다가, 그대로 남아있는
+  /// 카드는 같은 자리를 유지하고 팔린 자리에만 새 카드를 채운다.
+  final Map<int, List<String>> _tierSlotIds = {};
+
+  List<SplendorCard> _stableTierOrder(int tier, List<SplendorCard> cards) {
+    final byId = {for (final c in cards) c.id: c};
+    final prevSlotIds = _tierSlotIds[tier] ?? const <String>[];
+
+    final consumed = <String>{};
+    final slots = <SplendorCard?>[];
+    for (final id in prevSlotIds) {
+      final card = byId[id];
+      if (card != null) {
+        slots.add(card);
+        consumed.add(id);
+      } else {
+        slots.add(null);
+      }
+    }
+
+    final newcomers = cards.where((c) => !consumed.contains(c.id)).toList();
+    for (var i = 0; i < slots.length && newcomers.isNotEmpty; i++) {
+      slots[i] ??= newcomers.removeAt(0);
+    }
+    slots.addAll(newcomers); // 슬롯 수보다 카드가 많아진 경우(초기 호출 등) 뒤에 덧붙인다.
+
+    final ordered = slots.whereType<SplendorCard>().toList();
+    _tierSlotIds[tier] = ordered.map((c) => c.id).toList();
+    return ordered;
+  }
 
   /// 최신 상태로 보드를 다시 그립니다. 비동기(스프라이트 로딩)라서, 그리는 도중
   /// 더 최신 호출이 들어오면(연속 StateSync) 오래된 호출은 스스로 포기합니다.
@@ -46,8 +81,10 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
     final me = state.playerById(myUserId);
 
     final tierRows = <int, List<SplendorCard>>{};
+    final deckRemainingByTier = <int, int>{};
     for (final tier in state.boardTiers) {
       tierRows[tier.tier] = tier.visibleCards;
+      deckRemainingByTier[tier.tier] = tier.deckRemaining;
     }
 
     // 카드 폭을 기준으로 간격/귀족/토큰 크기를 모두 비례 산출한 뒤, 실제로 쓰이는
@@ -56,9 +93,13 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
     // (예전에는 leftMargin=size.x*0.04, topMargin=size.y*0.06처럼 고정 비율이라
     // 실제 콘텐츠가 보드의 절반 정도만 채우고 오른쪽/아래쪽에 쓰이지 않는 공간이
     // 훨씬 크게 남았습니다.)
-    final cardW = size.x * 0.105;
+    // 카드 폭 비율(예전 0.105의 1.5배)을 키운 만큼, 카드 사이 간격 비율은
+    // 0.14 -> 0.05로 줄여서 전체 콘텐츠 폭(contentWidth)이 보드 폭을
+    // 넘지 않도록 맞췄다(간격은 "기물"이 아니므로 줄여도 1.5배 요구사항과
+    // 무관하다).
+    final cardW = size.x * 0.1575;
     final cardH = cardW * 1.4;
-    final gap = cardW * 0.14;
+    final gap = cardW * 0.05;
     final sectionGap = gap * 2; // 티어 카드 줄과 예약 카드 칸 사이 구획 간격
     final nobleSize = Vector2.all(cardW * 0.75);
     final tokenIconSize = cardW * 0.55;
@@ -83,19 +124,19 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
     };
 
     final newCards = <CardComponent>[];
-    final newDeckBacks = <SpriteComponent>[];
+    final newDeckBacks = <DeckBackComponent>[];
 
     for (final tier in [3, 2, 1]) {
-      final cards = tierRows[tier] ?? const <SplendorCard>[];
+      final cards = _stableTierOrder(tier, tierRows[tier] ?? const <SplendorCard>[]);
       final y = tierRowY[tier]!;
 
       final backSprite = await loadSprite(GameAssets.cardBack(tier));
       if (myGeneration != _generation) return;
-      newDeckBacks.add(SpriteComponent(
+      newDeckBacks.add(DeckBackComponent(
         sprite: backSprite,
+        remaining: deckRemainingByTier[tier] ?? 0,
         position: Vector2(leftMargin, y),
         size: Vector2(cardW, cardH),
-        anchor: Anchor.topLeft,
       ));
 
       for (var i = 0; i < cards.length; i++) {
@@ -157,20 +198,27 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
       ));
     }
 
-    // 토큰 풀(보드에 남은 보석 은행)
+    // 토큰 풀(보드에 남은 보석 은행). 골드는 TakeTokens로 선택할 수 없는
+    // 와일드카드(예약 시에만 자동 지급)라서 탭으로 선택되지 않게 하고, 다른
+    // 5색과 헷갈리지 않도록 구획 간격만큼 떨어뜨려 그린다.
     final tokenY = tierRowY[1]! + cardH + gap;
     final newGems = <GemTokenComponent>[];
     for (var i = 0; i < Gem.values.length; i++) {
       final gem = Gem.values[i];
+      final isGold = gem == Gem.gold;
       final count = state.tokenBank[gem.wireValue] ?? 0;
       final sprite = await loadSprite(GameAssets.tokenImage(gem.wireValue));
       if (myGeneration != _generation) return;
+      final x = isGold
+          ? leftMargin + 5 * (tokenSize.x + gap) + sectionGap
+          : leftMargin + (tokenSize.x + gap) * i;
       newGems.add(GemTokenComponent(
         gem: gem.wireValue,
         count: count,
         sprite: sprite,
         onTap: onGemTap,
-        position: Vector2(leftMargin + (tokenSize.x + gap) * i, tokenY),
+        selectable: !isGold,
+        position: Vector2(x, tokenY),
         size: tokenSize,
       ));
     }

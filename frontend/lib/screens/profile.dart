@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_profile.dart';
-import '../state/auth_controller.dart';
 import '../state/profile_controller.dart';
 import '../theme/app_theme.dart';
 
-/// 프로필 화면. userId를 지정하지 않으면 로그인한 본인의 프로필을 보여줍니다.
-/// (친구 목록에서 "프로필 보기"를 통해 다른 유저의 프로필도 같은 화면으로 봅니다.)
-/// 백엔드에 GET /users/{userId}, /users/{userId}/stats가 아직 없어 로딩에 실패하면
-/// 에러 상태가 그대로 노출됩니다 — README 스펙대로 프런트를 완성해둔 상태입니다.
+/// 프로필 화면. userId를 지정하지 않으면 로그인한 본인의 프로필(GET /profile/me)을,
+/// 지정하면 그 유저의 프로필(GET /profile/{userId})을 보여줍니다.
+/// 닉네임 변경/아바타 업로드는 백엔드에 대응 엔드포인트가 없거나(닉네임) 별도
+/// 범위(아바타 업로드, 멀티파트)라 이 화면은 조회 전용입니다.
 class ProfileScreen extends ConsumerStatefulWidget {
   final int? userId;
   const ProfileScreen({super.key, this.userId});
@@ -18,47 +17,12 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  bool get _isOwnProfile => widget.userId == null;
-
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
-      final targetId = widget.userId ?? _currentUserId();
-      if (targetId != null) {
-        ref.read(profileControllerProvider.notifier).load(targetId);
-      }
-    });
-  }
-
-  int? _currentUserId() {
-    final auth = ref.read(authControllerProvider);
-    return auth is AuthAuthenticated ? auth.user.userId : null;
-  }
-
-  Future<void> _editNickname() async {
-    final state = ref.read(profileControllerProvider);
-    if (state is! ProfileLoaded) return;
-    final controller = TextEditingController(text: state.profile.nickname);
-
-    final newNickname = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const OrnateTitle(kicker: 'Merchant dossier', title: '닉네임 수정'),
-        content: TextField(controller: controller, decoration: const InputDecoration(labelText: '닉네임')),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('취소')),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('저장'),
-          ),
-        ],
-      ),
+    Future.microtask(
+      () => ref.read(profileControllerProvider.notifier).load(userId: widget.userId),
     );
-
-    if (newNickname != null && newNickname.isNotEmpty) {
-      await ref.read(profileControllerProvider.notifier).updateNickname(newNickname);
-    }
   }
 
   @override
@@ -81,7 +45,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               ),
             ),
-          ProfileLoaded(:final profile, :final stats) => SingleChildScrollView(
+          ProfileLoaded(:final profile) => SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -100,28 +64,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(profile.nickname, style: headingStyle(size: 18)),
-                            const SizedBox(height: 4),
-                            Text(
-                              '길드 가입일 ${_formatDate(profile.createdAt)}',
-                              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-                            ),
-                          ],
-                        ),
+                        child: Text(profile.nickname, style: headingStyle(size: 18)),
                       ),
-                      if (_isOwnProfile)
-                        OutlinedButton(onPressed: _editNickname, child: const Text('수정')),
                     ],
                   ),
                   const SizedBox(height: 24),
                   _StatsRow(stats: [
-                    _StatEntry('Games', '${stats.gamesPlayed}'),
-                    _StatEntry('Wins', '${stats.wins}'),
-                    _StatEntry('Avg score', stats.avgScore.toStringAsFixed(1)),
-                    _StatEntry('Avg turns', stats.avgTurns.toStringAsFixed(1)),
+                    _StatEntry('Games', '${profile.totalGamesPlayed}'),
+                    _StatEntry('Avg place', profile.overallAvgPlace.toStringAsFixed(1)),
                   ]),
                   const SizedBox(height: 28),
                   Text('RANKED RECORD', style: kickerStyle(size: 12)),
@@ -132,18 +82,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       child: Text('랭크전 기록이 없습니다.', style: TextStyle(color: AppColors.textMuted)),
                     )
                   else
-                    for (final entry in profile.rankings.entries)
-                      _RankedRecordRow(playerCount: entry.key, summary: entry.value),
+                    for (final summary in profile.rankings) _RankedRecordRow(summary: summary),
                   const SizedBox(height: 28),
                   Text('RECENT GAMES', style: kickerStyle(size: 12)),
                   const SizedBox(height: 8),
-                  if (profile.recentGames.isEmpty)
+                  if (profile.recentMatches.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: Text('최근 게임 기록이 없습니다.', style: TextStyle(color: AppColors.textMuted)),
                     )
                   else
-                    for (final game in profile.recentGames) _RecentGameRow(game: game),
+                    for (final match in profile.recentMatches) _RecentMatchRow(match: match),
                 ],
               ),
             ),
@@ -151,9 +100,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
-
-  String _formatDate(DateTime date) =>
-      '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
 }
 
 class _StatEntry {
@@ -191,9 +137,8 @@ class _StatsRow extends StatelessWidget {
 }
 
 class _RankedRecordRow extends StatelessWidget {
-  final String playerCount;
   final RankingSummary summary;
-  const _RankedRecordRow({required this.playerCount, required this.summary});
+  const _RankedRecordRow({required this.summary});
 
   @override
   Widget build(BuildContext context) {
@@ -204,10 +149,11 @@ class _RankedRecordRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text('$playerCount Players', style: const TextStyle(color: AppColors.textPrimary, fontSize: 13)),
+          Text('${summary.playerCount} Players',
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 13)),
           const SizedBox(width: 8),
           Text(
-            '${summary.gamesPlayedSeason}게임 · 평균 ${summary.avgPlace.toStringAsFixed(1)}등',
+            '${summary.gamesPlayed}게임 · 평균 ${summary.avgPlace.toStringAsFixed(1)}등',
             style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
           ),
           const Spacer(),
@@ -219,9 +165,9 @@ class _RankedRecordRow extends StatelessWidget {
   }
 }
 
-class _RecentGameRow extends StatelessWidget {
-  final RecentGame game;
-  const _RecentGameRow({required this.game});
+class _RecentMatchRow extends StatelessWidget {
+  final RecentMatch match;
+  const _RecentMatchRow({required this.match});
 
   @override
   Widget build(BuildContext context) {
@@ -232,11 +178,11 @@ class _RecentGameRow extends StatelessWidget {
       child: Row(
         children: [
           Text(
-            '${game.playersNumber} Players · ${game.gameType}',
+            '${match.playerCount} Players · ${match.isRanked ? 'Ranked' : 'Unranked'}',
             style: const TextStyle(fontSize: 12),
           ),
           const Spacer(),
-          Text('${game.place}등', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w700)),
+          Text('${match.place}등', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w700)),
         ],
       ),
     );

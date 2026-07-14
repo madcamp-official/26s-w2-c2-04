@@ -36,10 +36,11 @@ class MyApp extends ConsumerWidget {
       },
       builder: (context, child) {
         final activeRoom = ref.watch(activeRoomProvider);
+        final roomScreenVisible = ref.watch(roomScreenVisibleProvider);
         return Stack(
           children: [
             if (child != null) child,
-            if (activeRoom != null)
+            if (activeRoom != null && !roomScreenVisible)
               MinimizedRoomBadge(room: activeRoom, navigatorKey: rootNavigatorKey),
           ],
         );
