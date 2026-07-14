@@ -2,16 +2,21 @@ using System.Security.Claims;
 using Backend.Data;
 using Backend.Dtos;
 using Backend.Extensions;
+using Backend.Hubs;
 using Backend.Models;
 using Backend.Services;
 using Backend.Services.OAuth;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Endpoints;
 
 public static class AuthEndpoints
 {
+    private const int NicknameMaxLength = 20;
+    private static readonly TimeSpan StaleRefreshTokenAge = TimeSpan.FromDays(30);
+
     public static void MapAuthEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/auth");
@@ -28,6 +33,9 @@ public static class AuthEndpoints
             if (request.Password.Length < 6)
                 return Results.BadRequest(new { code = "INVALID_PAYLOAD", message = "password는 6자 이상이어야 합니다." });
 
+            if (request.Nickname.Trim().Length > NicknameMaxLength)
+                return Results.BadRequest(new { code = "INVALID_PAYLOAD", message = $"nickname은 {NicknameMaxLength}자를 초과할 수 없습니다." });
+
             var email = request.Email.Trim().ToLowerInvariant();
             if (await db.Users.AnyAsync(u => u.Email == email))
                 return Results.Conflict(new { code = "EMAIL_ALREADY_EXISTS", message = "이미 가입된 이메일입니다." });
@@ -36,7 +44,15 @@ public static class AuthEndpoints
             user.PasswordHash = hasher.HashPassword(user, request.Password);
 
             db.Users.Add(user);
-            await db.SaveChangesAsync();
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // 동시에 같은 이메일로 가입 요청이 들어와 유니크 제약에 걸린 경우.
+                return Results.Conflict(new { code = "EMAIL_ALREADY_EXISTS", message = "이미 가입된 이메일입니다." });
+            }
 
             var response = await IssueEmailAuthAsync(user, db, tokenService);
             return Results.Created("/auth/me", response);
@@ -49,6 +65,9 @@ public static class AuthEndpoints
             IPasswordHasher<User> hasher,
             ITokenService tokenService) =>
         {
+            if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+                return Results.BadRequest(new { code = "INVALID_PAYLOAD", message = "email, password는 필수입니다." });
+
             var email = request.Email.Trim().ToLowerInvariant();
             var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email);
             if (user?.PasswordHash is null)
@@ -99,7 +118,15 @@ public static class AuthEndpoints
             if (conflictingLogin is null)
             {
                 db.ExternalLogins.Add(new ExternalLogin { UserId = userId, Provider = oauthProvider.Provider, ProviderUserId = info.ProviderUserId });
-                await db.SaveChangesAsync();
+                try
+                {
+                    await db.SaveChangesAsync();
+                }
+                catch (DbUpdateException)
+                {
+                    // 동시에 같은 소셜 계정을 다른 유저가 먼저 연동한 경우.
+                    return Results.Conflict(new { code = "ALREADY_LINKED", message = "이미 다른 계정에 연동된 소셜 계정입니다." });
+                }
             }
 
             var linkedProviders = await db.ExternalLogins
@@ -119,15 +146,34 @@ public static class AuthEndpoints
                 .Include(rt => rt.User)
                 .FirstOrDefaultAsync(rt => rt.TokenHash == hash);
 
-            if (existing is null || !existing.IsActive)
+            if (existing is null)
                 return Results.Unauthorized();
 
-            var accessToken = tokenService.CreateAccessToken(existing.User, out var expiresAt);
-            return Results.Ok(new RefreshResponse(accessToken, ComputeExpiresIn(expiresAt)));
+            if (existing.RevokedAt is not null)
+            {
+                // 이미 한 번 회전(rotation)되어 폐기된 토큰이 다시 제시됨 = 탈취 의심.
+                // 이 유저의 살아있는 refresh token을 전부 강제 폐기한다.
+                var activeTokens = await db.RefreshTokens
+                    .Where(rt => rt.UserId == existing.UserId && rt.RevokedAt == null)
+                    .ToListAsync();
+                foreach (var token in activeTokens)
+                    token.RevokedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                return Results.Unauthorized();
+            }
+
+            if (existing.ExpiresAt <= DateTime.UtcNow)
+                return Results.Unauthorized();
+
+            existing.RevokedAt = DateTime.UtcNow;
+            var (accessToken, refreshToken, expiresIn) = await IssueTokensAsync(existing.User, db, tokenService);
+            return Results.Ok(new RefreshResponse(accessToken, refreshToken, expiresIn));
         })
             .WithName("Refresh");
 
-        group.MapPost("/logout", async (ClaimsPrincipal principal, AppDbContext db) =>
+        group.MapPost("/logout", async (
+            ClaimsPrincipal principal, AppDbContext db, GameStateStore stateStore, PresenceStore presence,
+            IHubContext<GameHub> hubContext, IHubContext<SocialHub> socialHubContext) =>
         {
             var userId = principal.GetUserId();
             var activeTokens = await db.RefreshTokens
@@ -136,10 +182,11 @@ public static class AuthEndpoints
 
             foreach (var token in activeTokens)
                 token.RevokedAt = DateTime.UtcNow;
-
-            await RoomEndpoints.LeaveAllWaitingRoomsAsync(db, userId);
-
             await db.SaveChangesAsync();
+
+            await RoomDepartureService.HandleUserGoingOfflineAsync(
+                db, stateStore, hubContext.Clients, socialHubContext.Clients, presence, userId);
+
             return Results.NoContent();
         })
             .RequireAuthorization()
@@ -192,10 +239,21 @@ public static class AuthEndpoints
                 : info.Nickname;
 
             user = new User { Email = info.Email, Nickname = nickname };
+            // User+ExternalLogin을 한 SaveChangesAsync에 같이 넣어서, 동시에 같은 소셜 계정으로
+            // 최초 로그인하는 레이스가 나면 트랜잭션 전체가 롤백되게 한다(User row만 고아로 남는 것 방지).
+            user.ExternalLogins.Add(new ExternalLogin { Provider = oauthProvider.Provider, ProviderUserId = info.ProviderUserId });
             db.Users.Add(user);
-            await db.SaveChangesAsync();
 
-            db.ExternalLogins.Add(new ExternalLogin { UserId = user.Id, Provider = oauthProvider.Provider, ProviderUserId = info.ProviderUserId });
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                return Results.Json(
+                    new { code = "OAUTH_LOGIN_CONFLICT", message = "동시 로그인 요청으로 충돌이 발생했습니다. 다시 시도해주세요." },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
         }
 
         var (accessToken, refreshToken, expiresIn) = await IssueTokensAsync(user, db, tokenService);
@@ -215,6 +273,15 @@ public static class AuthEndpoints
             TokenHash = tokenService.HashRefreshToken(refreshToken),
             ExpiresAt = DateTime.UtcNow.AddDays(7),
         });
+
+        // 새 토큰을 발급하는 김에, 이 유저 소유의 만료됐거나 폐기된 지 오래된 토큰을 정리한다.
+        // 전역 스윕 워커 없이 활성 유저 기준으로 자연스럽게 테이블 크기가 제한된다.
+        var staleCutoff = DateTime.UtcNow - StaleRefreshTokenAge;
+        var staleTokens = await db.RefreshTokens
+            .Where(rt => rt.UserId == user.Id && (rt.ExpiresAt <= DateTime.UtcNow || rt.RevokedAt <= staleCutoff))
+            .ToListAsync();
+        db.RefreshTokens.RemoveRange(staleTokens);
+
         await db.SaveChangesAsync();
 
         return (accessToken, refreshToken, ComputeExpiresIn(expiresAt));

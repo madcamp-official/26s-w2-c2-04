@@ -33,7 +33,7 @@ public record OAuthAuthResponse(
 
 public record LinkResponse(List<string> LinkedProviders);
 
-public record RefreshResponse(string AccessToken, int ExpiresIn);
+public record RefreshResponse(string AccessToken, string RefreshToken, int ExpiresIn);
 
 public record MeResponse(
     int UserId,

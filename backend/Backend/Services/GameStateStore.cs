@@ -17,6 +17,7 @@ public class GameStateStore(IConnectionMultiplexer redis)
 
     private static string StateKey(int gameId) => $"game:{gameId}:state";
     private static string LockKey(int gameId) => $"game:{gameId}:lock";
+    private static string ConnectedSetKey(int gameId) => $"game:{gameId}:connected";
 
     public async Task SaveAsync(int gameId, GameState state)
     {
@@ -30,7 +31,16 @@ public class GameStateStore(IConnectionMultiplexer redis)
         return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<GameState>((string)json!);
     }
 
-    public Task RemoveAsync(int gameId) => _db.KeyDeleteAsync(StateKey(gameId));
+    public Task RemoveAsync(int gameId) =>
+        Task.WhenAll(_db.KeyDeleteAsync(StateKey(gameId)), _db.KeyDeleteAsync(ConnectedSetKey(gameId)));
+
+    /// <summary>
+    /// 이 방(게임)에 실제로 Hub JoinRoom을 한 번이라도 호출한 유저를 기록한다.
+    /// 매칭/참가 후 Hub에 한 번도 안 붙는 "유령 멤버"를 RoomDepartureWorker가 걸러내는 데 쓴다.
+    /// </summary>
+    public Task MarkPlayerConnectedAsync(int gameId, int userId) => _db.SetAddAsync(ConnectedSetKey(gameId), userId);
+
+    public Task<bool> HasPlayerConnectedAsync(int gameId, int userId) => _db.SetContainsAsync(ConnectedSetKey(gameId), userId);
 
     /// <summary>
     /// 게임당 액션을 직렬화하기 위한 분산 락. using으로 감싸면 자동 해제된다.
