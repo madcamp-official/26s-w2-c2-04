@@ -83,6 +83,7 @@ class SocketService implements GameSocket {
       'NobleChoiceRequired',
       'PlayerJoined',
       'PlayerLeft',
+      'PlayerReadyChanged',
       'FinalRoundTriggered',
       'GameOver',
       'ChatMessage',

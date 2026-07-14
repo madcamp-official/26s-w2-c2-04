@@ -58,6 +58,18 @@ class RoomService {
     ApiClient.ensureOk(res, '방 퇴장에 실패했습니다.');
   }
 
+  /// 대기실에서 내 "준비" 상태를 갱신합니다(README 4/8절). 서버가 갱신된 방을
+  /// 돌려주고, 방 그룹(GameHub) 전체에 PlayerReadyChanged를 브로드캐스트하므로
+  /// 호출한 본인도 그 이벤트로 상태가 맞춰집니다.
+  Future<GameRoom> setReady(int roomId, bool ready) async {
+    final res = await _client.post(
+      '/rooms/$roomId/ready',
+      body: {'ready': ready},
+    );
+    ApiClient.ensureOk(res, '준비 상태 변경에 실패했습니다.');
+    return GameRoom.fromJson(jsonDecode(res.body));
+  }
+
   /// 방장이 게임을 시작합니다. 이후 진행은 GameHub의 JoinRoom/StateSync로 이어집니다.
   Future<({int gameId, String phase})> startGame(int roomId) async {
     final res = await _client.post('/rooms/$roomId/start');

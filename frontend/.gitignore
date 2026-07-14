@@ -33,6 +33,11 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# build_runner(freezed/json_serializable) 코드 생성 산출물. `flutter pub run
+# build_runner build --delete-conflicting-outputs`로 언제든 재생성 가능.
+*.freezed.dart
+*.g.dart
+
 # Symbolication related
 app.*.symbols
 

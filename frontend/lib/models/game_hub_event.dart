@@ -62,6 +62,13 @@ class GameHubEvent with _$GameHubEvent {
     required String nickname,
   }) = GameHubPlayerLeft;
 
+  /// 대기실 "준비" 상태 변경(README 4/8절). 방장이 POST /rooms/{id}/ready로
+  /// 갱신하면 서버가 방 그룹 전체(발신자 본인 포함)에 브로드캐스트한다.
+  const factory GameHubEvent.playerReadyChanged({
+    required int userId,
+    required bool ready,
+  }) = GameHubPlayerReadyChanged;
+
   const factory GameHubEvent.finalRoundTriggered({
     required int triggeredBy,
     int? lastTurnPlayerId,
@@ -145,6 +152,11 @@ GameHubEvent parseGameHubEvent(String method, List<Object?>? args) {
       return GameHubEvent.playerLeft(
         userId: (json['userId'] as num).toInt(),
         nickname: json['nickname'] as String,
+      );
+    case 'PlayerReadyChanged':
+      return GameHubEvent.playerReadyChanged(
+        userId: (json['userId'] as num).toInt(),
+        ready: json['ready'] as bool,
       );
     case 'FinalRoundTriggered':
       return GameHubEvent.finalRoundTriggered(

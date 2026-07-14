@@ -202,6 +202,9 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
     // 와일드카드(예약 시에만 자동 지급)라서 탭으로 선택되지 않게 하고, 다른
     // 5색과 헷갈리지 않도록 구획 간격만큼 떨어뜨려 그린다.
     final tokenY = tierRowY[1]! + cardH + gap;
+    // 골드는 5색 토큰과 뚜렷이 구분되도록 카드 한 장 폭만큼 크게 띄워 그린다
+    // (토큰 줄은 카드 줄보다 훨씬 좁아 오른쪽에 여유가 충분하다).
+    final goldGap = cardW;
     final newGems = <GemTokenComponent>[];
     for (var i = 0; i < Gem.values.length; i++) {
       final gem = Gem.values[i];
@@ -210,7 +213,7 @@ class BoardComponent extends PositionComponent with HasGameReference<FlameGame> 
       final sprite = await loadSprite(GameAssets.tokenImage(gem.wireValue));
       if (myGeneration != _generation) return;
       final x = isGold
-          ? leftMargin + 5 * (tokenSize.x + gap) + sectionGap
+          ? leftMargin + 5 * (tokenSize.x + gap) + goldGap
           : leftMargin + (tokenSize.x + gap) * i;
       newGems.add(GemTokenComponent(
         gem: gem.wireValue,

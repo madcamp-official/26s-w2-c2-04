@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:signalr_netcore/signalr_client.dart';
 import 'package:splendor_multiplayer/models/game_hub_event.dart';
 import 'package:splendor_multiplayer/models/game_state.dart';
+import 'package:splendor_multiplayer/models/gameroom.dart';
 import 'package:splendor_multiplayer/models/player.dart';
 import 'package:splendor_multiplayer/services/play_service.dart';
+import 'package:splendor_multiplayer/services/room_service.dart';
 import 'package:splendor_multiplayer/services/socket_service.dart';
 import 'package:splendor_multiplayer/state/game_controller.dart';
 
@@ -75,6 +77,27 @@ class _FakeGameSocket implements GameSocket {
   void emit(GameHubEvent event) => _controller.add(event);
 }
 
+class _FakeRoomService implements RoomService {
+  final List<String> calls = [];
+
+  GameRoom _room(int id) => GameRoom(
+        roomId: id,
+        hostId: 9000,
+        players: const [],
+        createdAt: DateTime.utc(2026, 7, 10),
+      );
+
+  @override
+  Future<GameRoom> setReady(int roomId, bool ready) async {
+    calls.add('setReady($roomId,$ready)');
+    return _room(roomId);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not stubbed');
+}
+
 GameState _fullState({int sequence = 1}) => GameState(
       gameId: 9911,
       phase: GamePhase.playing,
@@ -92,16 +115,59 @@ GameState _fullState({int sequence = 1}) => GameState(
 
 void main() {
   late _FakeGameSocket socket;
+  late _FakeRoomService roomService;
   late GameController controller;
 
   setUp(() {
     socket = _FakeGameSocket();
-    controller = GameController(socket, PlayService());
+    roomService = _FakeRoomService();
+    controller = GameController(socket, PlayService(), roomService);
   });
 
   test('connect는 소켓에 연결을 위임한다', () async {
     await controller.connect(roomId: 5566, accessToken: 'token');
     expect(socket.calls, contains('connect(5566)'));
+  });
+
+  test('connect 시 initialPlayers의 isReady로 readyPlayerIds를 시드한다', () async {
+    await controller.connect(
+      roomId: 5566,
+      accessToken: 'token',
+      initialPlayers: const [
+        Player(id: 1, nickname: '방장'),
+        Player(id: 2, nickname: '준비완료', isReady: true),
+      ],
+    );
+
+    final state = controller.state as GameWaitingRoom;
+    expect(state.readyPlayerIds, {2});
+  });
+
+  test('setReady는 POST /rooms/{id}/ready(RoomService)로 위임한다', () async {
+    await controller.connect(roomId: 5566, accessToken: 'token');
+
+    await controller.setReady(ready: true);
+
+    expect(roomService.calls, contains('setReady(5566,true)'));
+  });
+
+  test('PlayerReadyChanged 이벤트가 오면 readyPlayerIds가 갱신된다', () async {
+    await controller.connect(
+      roomId: 5566,
+      accessToken: 'token',
+      initialPlayers: const [
+        Player(id: 1, nickname: '방장'),
+        Player(id: 2, nickname: '멤버'),
+      ],
+    );
+
+    socket.emit(const GameHubEvent.playerReadyChanged(userId: 2, ready: true));
+    await Future<void>.delayed(Duration.zero);
+    expect((controller.state as GameWaitingRoom).readyPlayerIds, {2});
+
+    socket.emit(const GameHubEvent.playerReadyChanged(userId: 2, ready: false));
+    await Future<void>.delayed(Duration.zero);
+    expect((controller.state as GameWaitingRoom).readyPlayerIds, isEmpty);
   });
 
   test(

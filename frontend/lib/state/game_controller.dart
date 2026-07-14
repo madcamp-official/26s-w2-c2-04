@@ -11,6 +11,8 @@ import '../models/game_hub_event.dart';
 import '../models/player.dart';
 import '../services/socket_service.dart';
 import '../services/play_service.dart';
+import '../services/room_service.dart';
+import 'lobby_controller.dart';
 
 sealed class GameControllerState {
   const GameControllerState();
@@ -93,12 +95,17 @@ final playServiceProvider = Provider((ref) => PlayService());
 // 전달되지 않는 문제로 이어졌습니다. 연결은 leaveRoom()에서만 명시적으로 끊습니다.
 final gameControllerProvider =
     StateNotifierProvider<GameController, GameControllerState>((ref) {
-  return GameController(SocketService(), ref.read(playServiceProvider));
+  return GameController(
+    SocketService(),
+    ref.read(playServiceProvider),
+    ref.read(roomServiceProvider),
+  );
 });
 
 class GameController extends StateNotifier<GameControllerState> {
   final GameSocket _socket;
   final PlayService _playService;
+  final RoomService _roomService;
   StreamSubscription<GameHubEvent>? _sub;
   int? _roomId;
   int _lastSequence = 0;
@@ -109,7 +116,7 @@ class GameController extends StateNotifier<GameControllerState> {
   // 굳어 닉네임이 전부 "User {id}"로 보이는 일을 막을 수 있다.
   List<Player> _initialPlayers = const [];
 
-  GameController(this._socket, this._playService)
+  GameController(this._socket, this._playService, this._roomService)
       : super(const GameDisconnected());
 
   Future<void> connect({
@@ -146,7 +153,13 @@ class GameController extends StateNotifier<GameControllerState> {
       // 이미 진행 중인 게임이면 connect() 도중 StateSync가 도착해 GameConnected로
       // 넘어가 있을 수 있으므로, 여전히 GameConnecting일 때만 대기실로 전이한다.
       if (state is GameConnecting) {
-        state = GameWaitingRoom(initialPlayers);
+        // 서버 응답(RoomPlayerResponse.isReady)에서 이미 채워진 준비 상태를
+        // 그대로 시드한다 — 재입장/뒤늦은 연결에서도 준비 현황이 맞춰진다.
+        state = GameWaitingRoom(
+          initialPlayers,
+          readyPlayerIds:
+              initialPlayers.where((p) => p.isReady).map((p) => p.id).toSet(),
+        );
       }
     } catch (e) {
       state = GameError(e.toString());
@@ -186,6 +199,7 @@ class GameController extends StateNotifier<GameControllerState> {
       ),
       playerJoined: (userId, nickname) => _addRoomPlayer(userId, nickname),
       playerLeft: (userId, nickname) => _removeRoomPlayer(userId, nickname),
+      playerReadyChanged: (userId, ready) => _updateReady(userId, ready),
       finalRoundTriggered: (triggeredBy, lastTurnPlayerId) =>
           _setNotice('마지막 라운드가 시작되었습니다.'),
       gameOver: (winnerId, finalScores, tieBreakReason) => _updateConnected(
@@ -196,21 +210,11 @@ class GameController extends StateNotifier<GameControllerState> {
           chatLog: [...c.chatLog, event as GameHubChatMessage],
         ),
       ),
-      emoteReceived: (playerId, emoteId, ts) => _handleEmote(playerId, emoteId),
+      // 이모트 채널은 준비 기능에서 더 이상 쓰지 않는다(전용 REST + PlayerReadyChanged로
+      // 대체). 실제 이모트 UI가 생기면 여기서 처리하면 된다.
+      emoteReceived: (playerId, emoteId, ts) {},
       errorOccurred: (code, message) => _setNotice('오류: $message'),
     );
-  }
-
-  static const _readyOnEmote = '__ready_on__';
-  static const _readyOffEmote = '__ready_off__';
-
-  void _handleEmote(int playerId, String emoteId) {
-    if (emoteId == _readyOnEmote) {
-      _updateReady(playerId, true);
-    } else if (emoteId == _readyOffEmote) {
-      _updateReady(playerId, false);
-    }
-    // 그 외 값은(실제 이모트 기능이 생기면) 여기서 처리하면 된다.
   }
 
   void _updateReady(int playerId, bool ready) {
@@ -225,11 +229,14 @@ class GameController extends StateNotifier<GameControllerState> {
     state = GameWaitingRoom(current.players, readyPlayerIds: next);
   }
 
-  /// 대기실에서 "준비" 토글. SendEmote는 발신자 자신에게는 돌아오지 않으므로
-  /// (Clients.OthersInGroup) 내 쪽 상태는 낙관적으로 바로 반영한다.
-  Future<void> setReady({required int myUserId, required bool ready}) async {
-    _updateReady(myUserId, ready);
-    await _socket.sendEmote(ready ? _readyOnEmote : _readyOffEmote);
+  /// 대기실에서 "준비" 토글(README 4/8절). POST /rooms/{id}/ready만 호출하면,
+  /// 서버가 방 그룹(GameHub) 전체에 PlayerReadyChanged를 브로드캐스트하고 호출한
+  /// 본인의 연결도 그 그룹 멤버라 그대로 되돌려받으므로, 낙관적 로컬 업데이트
+  /// 없이 _updateReady로 상태가 맞춰진다.
+  Future<void> setReady({required bool ready}) async {
+    final roomId = _roomId;
+    if (roomId == null) return;
+    await _roomService.setReady(roomId, ready);
   }
 
   void _applyStateSync(
