@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/friend.dart';
 import '../models/friend_request.dart';
 import '../models/player.dart';
-import '../state/auth_controller.dart';
 import '../state/friend_controller.dart';
 import '../theme/app_theme.dart';
 import 'profile.dart';
@@ -27,10 +26,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen> {
   void initState() {
     super.initState();
     Future.microtask(() {
-      final auth = ref.read(authControllerProvider);
-      ref.read(friendControllerProvider.notifier).load(
-            accessToken: auth is AuthAuthenticated ? auth.user.accessToken : null,
-          );
+      ref.read(friendControllerProvider.notifier).load();
     });
   }
 

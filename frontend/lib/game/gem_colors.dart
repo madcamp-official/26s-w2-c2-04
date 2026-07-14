@@ -6,6 +6,17 @@
 
 import 'dart:ui';
 
+/// 카드 비용/귀족 요구조건 오버레이 및 좌석 패널의 보너스/구매 카드 줄에서
+/// 항상 이 순서(파랑/빨강/초록/검정/흰색)로 보석 색을 나열합니다. gold는 카드
+/// 보너스/비용으로 나오지 않으므로 제외합니다.
+const List<String> gemDisplayOrder = [
+  'Sapphire',
+  'Ruby',
+  'Emerald',
+  'Onyx',
+  'Diamond',
+];
+
 const Map<String, Color> gemPipColors = {
   'diamond': Color(0xFFE7E1D2),
   'sapphire': Color(0xFF357FC7),

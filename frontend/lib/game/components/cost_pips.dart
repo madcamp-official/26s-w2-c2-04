@@ -7,12 +7,11 @@
 import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flutter/painting.dart' show FontWeight, TextStyle;
-import '../../models/gem.dart';
 import '../gem_colors.dart';
 
 /// [amounts](색상 wireValue -> 남은 개수)를 [parent] 하단 가운데에 pip로 그립니다.
-/// 0 이하인 색상은 건너뜁니다. Gem.values 순서를 그대로 따라 항상 같은 자리에
-/// 같은 색이 나오게 합니다(gold 제외 — 카드 비용/귀족 요구조건에는 gold가 없음).
+/// 0 이하인 색상은 건너뜁니다. gemDisplayOrder(파랑/빨강/초록/검정/흰색) 순서를
+/// 그대로 따라 항상 같은 자리에 같은 색이 나오게 합니다.
 void addCostPipRow(
   PositionComponent parent, {
   required Map<String, int> amounts,
@@ -20,9 +19,8 @@ void addCostPipRow(
   double pipDiameter = 13,
 }) {
   final entries = [
-    for (final gem in Gem.values)
-      if (gem != Gem.gold && (amounts[gem.wireValue] ?? 0) > 0)
-        MapEntry(gem.wireValue, amounts[gem.wireValue]!),
+    for (final wireValue in gemDisplayOrder)
+      if ((amounts[wireValue] ?? 0) > 0) MapEntry(wireValue, amounts[wireValue]!),
   ];
   if (entries.isEmpty) return;
 

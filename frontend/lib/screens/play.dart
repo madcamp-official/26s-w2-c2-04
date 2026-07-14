@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -492,16 +494,6 @@ class _GameBoardState extends State<_GameBoard> {
   }
 }
 
-/// 카드 색상별 겹침 배치에서 항상 이 순서로 5개 열을 그립니다(보너스 칩 줄과도
-/// 동일한 순서). gold는 카드 보너스로 나오지 않으므로 제외합니다.
-const List<String> _cardBonusGemOrder = [
-  'Sapphire',
-  'Ruby',
-  'Emerald',
-  'Onyx',
-  'Diamond',
-];
-
 const Map<String, Color> _gemPanelColors = {
   'sapphire': AppColors.sapphire,
   'ruby': AppColors.ruby,
@@ -516,9 +508,9 @@ Color _gemPanelColor(String bonusWireValue) =>
 /// 좌/우 좌석 패널을 [RotatedBox]로 눕히기 전, 눕히지 않은 상태에서 차지하는
 /// "짧은 쪽" 치수. 좌/우에서는 이 값이 화면에 그려지는 폭이 되고, 상/하에서는
 /// 그냥 패널의 자연스러운 높이 예산으로 쓰입니다. _PlayerSeatPanel의 내용
-/// (아바타/이름 줄 + 보너스 줄 + 카드 줄 + 패딩)이 이 안에 들어오도록
-/// _GemCardStack의 치수와 함께 맞춰뒀습니다.
-const double _seatPanelCrossAxis = 128;
+/// (아바타/이름 줄 + 토큰/보너스 줄 + 카드 줄 + 예약 카드 줄 + 패딩)이 이 안에
+/// 들어오도록 _GemCardStack의 치수와 함께 맞춰뒀습니다.
+const double _seatPanelCrossAxis = 180;
 
 /// playersInOrder에서 내 자리를 항상 "하단"에 고정하고, 턴 진행 순서를 시계
 /// 방향(하단 → 우측 → 상단 → 좌측)으로 배정합니다. Splendor는 2~4인이라 남는
@@ -621,12 +613,17 @@ class _SquareTable extends StatelessWidget {
   }
 
   /// 상/하 좌석도 동일한 이유로 높이를 [_seatPanelCrossAxis]로 제한하고 잘라냅니다.
-  Widget _centerSeat(GamePlayerState? player) {
+  /// 폭은 [width]로 제한해 중앙 보드 한 변의 길이보다 살짝 작게 맞춥니다 —
+  /// 이전에는 폭 제한이 없어 프로그램 창 가장자리까지 늘어났습니다.
+  Widget _centerSeat(GamePlayerState? player, double width) {
     if (player == null) return const SizedBox.shrink();
     return ClipRect(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: _seatPanelCrossAxis),
-        child: _seat(player),
+      child: SizedBox(
+        width: width,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: _seatPanelCrossAxis),
+          child: _seat(player),
+        ),
       ),
     );
   }
@@ -635,24 +632,43 @@ class _SquareTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final seats = _assignTableSeats(gameState.playersInOrder, myUserId);
 
-    return Column(
-      children: [
-        _centerSeat(seats.top),
-        Expanded(
-          child: Row(
-            children: [
-              _sideSeat(seats.left, 1),
-              Expanded(
-                child: Center(
-                  child: AspectRatio(aspectRatio: 1, child: board),
-                ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 좌/우가 차지하는 폭(_seatPanelCrossAxis, 있을 때만)을 뺀 나머지와
+        // 상/하가 차지하는 높이를 뺀 나머지 중 더 작은 쪽이 실제로 그려질
+        // 중앙 보드 한 변의 길이(AspectRatio(1)이 최종적으로 계산할 값과 동일).
+        final horizontalBudget =
+            (seats.left != null ? _seatPanelCrossAxis : 0.0) +
+                (seats.right != null ? _seatPanelCrossAxis : 0.0);
+        final verticalBudget =
+            (seats.top != null ? _seatPanelCrossAxis : 0.0) +
+                (seats.bottom != null ? _seatPanelCrossAxis : 0.0);
+        final boardEdge = math.min(
+          constraints.maxWidth - horizontalBudget,
+          constraints.maxHeight - verticalBudget,
+        ).clamp(0.0, double.infinity);
+        final centerSeatWidth = boardEdge * 0.92;
+
+        return Column(
+          children: [
+            _centerSeat(seats.top, centerSeatWidth),
+            Expanded(
+              child: Row(
+                children: [
+                  _sideSeat(seats.left, 1),
+                  Expanded(
+                    child: Center(
+                      child: AspectRatio(aspectRatio: 1, child: board),
+                    ),
+                  ),
+                  _sideSeat(seats.right, 3),
+                ],
               ),
-              _sideSeat(seats.right, 3),
-            ],
-          ),
-        ),
-        _centerSeat(seats.bottom),
-      ],
+            ),
+            _centerSeat(seats.bottom, centerSeatWidth),
+          ],
+        );
+      },
     );
   }
 }
@@ -771,7 +787,7 @@ class _PlayerSeatPanel extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              for (final gem in _cardBonusGemOrder)
+              for (final gem in gemDisplayOrder)
                 _BonusChip(
                   color: _gemPanelColor(gem),
                   count: bonusesByGem[gem] ?? 0,
@@ -783,13 +799,32 @@ class _PlayerSeatPanel extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final gem in _cardBonusGemOrder)
+              for (final gem in gemDisplayOrder)
                 _GemCardStack(
                   color: _gemPanelColor(gem),
                   cards: cardsByGem[gem] ?? const [],
                 ),
             ],
           ),
+          // 예약 카드는 서버가 모든 참가자에게 실제 카드 정보를 그대로 보내므로
+          // (backend/Backend/testFrontend의 참고 클라이언트도 reservedCardIds를
+          // 전원에게 보여준다), 보드 위 "내 예약 카드 줄"과 별개로 다른 플레이어의
+          // 예약 카드도 여기 좌석 패널에 작게 표시합니다 — 이전에는 예약 카드가
+          // 이 화면 어디에도 그려지지 않아 다른 사람에게는 안 보이는 것처럼
+          // 보였습니다.
+          if (player.reservedCards.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final card in player.reservedCards)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 3),
+                    child: _ReservedCardThumb(card: card),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -807,19 +842,19 @@ class _BonusChip extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 8,
-          height: 8,
+          width: 13,
+          height: 13,
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white24, width: 0.5),
           ),
         ),
-        const SizedBox(width: 2),
+        const SizedBox(width: 3),
         Text(
           '$count',
           style: const TextStyle(
-            fontSize: 9,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
           ),
@@ -841,7 +876,7 @@ class _TokenChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isGold = gem == Gem.gold;
-    final size = isGold ? 18.0 : 15.0;
+    final size = isGold ? 26.0 : 22.0;
     return Container(
       width: size,
       height: size,
@@ -851,16 +886,46 @@ class _TokenChip extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(
           color: isGold ? Colors.white70 : Colors.white24,
-          width: isGold ? 1.2 : 0.5,
+          width: isGold ? 1.5 : 0.8,
         ),
       ),
       child: Text(
         '$count',
         style: TextStyle(
-          fontSize: isGold ? 9.5 : 8.5,
+          fontSize: isGold ? 13.5 : 12.5,
           fontWeight: FontWeight.w800,
           color: gemPipTextColor(gem.wireValue),
         ),
+      ),
+    );
+  }
+}
+
+/// 다른 플레이어의 예약 카드를 실제 얼굴로 작게 보여줍니다(백엔드가
+/// reservedCards를 전원에게 실제 카드 정보로 보내므로 감출 이유가 없습니다).
+class _ReservedCardThumb extends StatelessWidget {
+  final SplendorCard card;
+  const _ReservedCardThumb({required this.card});
+
+  static const _w = 18.0;
+  static const _h = 25.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final imagePath = GameAssets.cardFace(card.id);
+    return Container(
+      width: _w,
+      height: _h,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(3),
+        color: AppColors.panelAlt,
+        border: Border.all(color: AppColors.goldHairline, width: 1),
+        image: imagePath != null
+            ? DecorationImage(
+                image: AssetImage('assets/image/$imagePath'),
+                fit: BoxFit.cover,
+              )
+            : null,
       ),
     );
   }
@@ -892,9 +957,13 @@ class _GemCardStack extends StatelessWidget {
       );
     }
 
+    // 하한을 4.0으로 두면 카드가 7장 이상 쌓였을 때 겹침 간격이 그 아래로
+    // 내려가야 총 높이가 _maxColumnH 안에 들어오는데도 강제로 4.0을 유지해서
+    // 실제 높이가 _maxColumnH를 넘어버렸다(좌석 패널 Column이 bottom overflow).
+    // 하한을 0.0으로 낮춰 카드 수와 무관하게 항상 _maxColumnH 이하로 맞춘다.
     final overlap = cards.length == 1
         ? 0.0
-        : ((_maxColumnH - _cardH) / (cards.length - 1)).clamp(4.0, 14.0);
+        : ((_maxColumnH - _cardH) / (cards.length - 1)).clamp(0.0, 14.0);
     final height = _cardH + overlap * (cards.length - 1);
 
     return SizedBox(

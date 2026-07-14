@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/auth_user.dart';
 import '../services/auth_service.dart';
+import '../services/social_socket_service.dart';
 import '../utils/token_storage.dart';
 
 sealed class AuthState {
@@ -33,14 +34,28 @@ final authControllerProvider =
   return AuthController(
     ref.read(authServiceProvider),
     ref.read(tokenStorageProvider),
+    ref.read(socialSocketProvider),
   );
 });
 
 class AuthController extends StateNotifier<AuthState> {
   final AuthService _authService;
   final TokenStorage _tokenStorage;
-  AuthController(this._authService, this._tokenStorage)
+  final SocialSocket _socialSocket;
+  AuthController(this._authService, this._tokenStorage, this._socialSocket)
       : super(const AuthInitial());
+
+  /// 로그인 상태로 들어가는 모든 경로(회원가입/로그인 성공, 세션 복원)에서
+  /// SocialHub에 상시 연결해야 서버가 "같은 계정으로 로그인 중"을 정확히
+  /// 판단해 동시접속을 차단할 수 있다. 소켓 연결은 로그인 자체의 성패와
+  /// 무관한 best-effort이므로 실패해도 로그인 흐름을 막지 않는다.
+  Future<void> _connectSocialSocket(String accessToken) async {
+    try {
+      await _socialSocket.connect(accessToken);
+    } catch (_) {
+      // SocialHub 연결 실패는 무시한다 — 로그인 자체는 이미 끝난 상태.
+    }
+  }
 
   /// 앱 시작 시 한 번 호출해서 저장된 세션이 있으면 복원합니다.
   /// accessToken이 만료됐더라도 ApiClient가 refreshToken으로 자동 갱신을 시도하므로,
@@ -49,6 +64,7 @@ class AuthController extends StateNotifier<AuthState> {
     final user = await _tokenStorage.readUser();
     if (user != null) {
       state = AuthAuthenticated(user);
+      await _connectSocialSocket(user.accessToken);
     }
   }
 
@@ -66,6 +82,7 @@ class AuthController extends StateNotifier<AuthState> {
       );
       await _tokenStorage.saveUser(user);
       state = AuthAuthenticated(user);
+      await _connectSocialSocket(user.accessToken);
     } catch (e) {
       state = AuthError(e.toString());
     }
@@ -77,6 +94,7 @@ class AuthController extends StateNotifier<AuthState> {
       final user = await _authService.logIn(email: email, password: password);
       await _tokenStorage.saveUser(user);
       state = AuthAuthenticated(user);
+      await _connectSocialSocket(user.accessToken);
     } catch (e) {
       state = AuthError(e.toString());
     }
@@ -86,6 +104,11 @@ class AuthController extends StateNotifier<AuthState> {
     final current = state;
     if (current is AuthAuthenticated) {
       await _authService.logOut(current.user.accessToken);
+    }
+    try {
+      await _socialSocket.disconnect();
+    } catch (_) {
+      // 로그아웃 자체는 계속 진행한다.
     }
     await _tokenStorage.clear();
     state = const AuthInitial();
