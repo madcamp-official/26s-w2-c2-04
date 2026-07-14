@@ -25,5 +25,5 @@ public class Room
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<RoomPlayer> Players { get; set; } = new();
-    public Game? Game { get; set; }
+    public List<Game> Games { get; set; } = new();
 }

@@ -117,6 +117,24 @@
     color: #991b1b;
   }
   .hub-status.connected { background: #dcfce7; color: #166534; }
+  .online-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #d1d5db;
+    margin-right: 6px;
+  }
+  .online-dot.online, .online-dot.status-online { background: #22c55e; }
+  .online-dot.status-away { background: #f59e0b; }
+  .online-dot.status-in_game { background: #2563eb; }
+  .online-dot.status-offline { background: #d1d5db; }
+  .friend-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 13px; }
+  .friend-row .actions button { margin-top: 0; padding: 4px 8px; font-size: 12px; }
+  #messageThread { max-height: 260px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px; margin: 8px 0; background: #fafafa; }
+  .msg { margin: 4px 0; padding: 6px 10px; border-radius: 10px; font-size: 13px; max-width: 75%; }
+  .msg.mine { background: #dbeafe; margin-left: auto; text-align: right; }
+  .msg.theirs { background: #f3f4f6; }
 </style>
 </head>
 <body>
@@ -243,6 +261,79 @@
 </section>
 
 <section>
+  <h2>프로필</h2>
+  <div class="row">
+    <label>조회할 User ID <input id="profileUserId" type="number" placeholder="비우면 /profile/me(내 프로필)"></label>
+  </div>
+  <button id="btnProfileLoad">프로필 조회</button>
+
+  <div class="row" style="margin-top:12px">
+    <label>아바타 이미지 파일(png/jpeg/webp, 2MB 이하) <input id="avatarFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
+  </div>
+  <button id="btnAvatarUpload">아바타 업로드</button>
+  <button id="btnAvatarDelete" class="danger">내 아바타 삭제</button>
+
+  <div id="profileSummary" style="margin-top:14px;font-size:13px"></div>
+
+  <div style="margin-top:10px">
+    <div style="font-size:12px;color:#666;margin-bottom:4px">인원수별 랭킹</div>
+    <table id="profileRankingTable">
+      <thead><tr><th>인원수</th><th>순위</th><th>MMR</th><th>플레이 수</th><th>평균 등수</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:10px">
+    <div style="font-size:12px;color:#666;margin-bottom:4px">최근 전적</div>
+    <table id="profileMatchTable">
+      <thead><tr><th>게임 ID</th><th>인원수</th><th>등수</th><th>점수</th><th>랭킹전</th><th>일시</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>친구 검색 / 요청</h2>
+  <div class="row">
+    <label>닉네임 또는 User ID 검색 <input id="friendSearchQuery" type="text" placeholder="비워두면 전체(최대 20명)"></label>
+  </div>
+  <button id="btnFriendSearch">검색</button>
+  <table id="friendSearchTable">
+    <thead><tr><th>User ID</th><th>닉네임</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <div style="margin-top:14px">
+    <div style="font-size:12px;color:#666;margin-bottom:4px">받은 요청</div>
+    <div id="incomingRequests" style="font-size:13px">-</div>
+  </div>
+  <div style="margin-top:10px">
+    <div style="font-size:12px;color:#666;margin-bottom:4px">보낸 요청</div>
+    <div id="outgoingRequests" style="font-size:13px">-</div>
+  </div>
+  <button id="btnFriendRequestsRefresh" class="secondary" style="margin-top:10px">요청 목록 새로고침</button>
+</section>
+
+<section>
+  <h2>친구 목록</h2>
+  <button id="btnFriendsRefresh">친구 목록 새로고침</button>
+  <div id="friendList" style="margin-top:8px">-</div>
+</section>
+
+<section>
+  <h2>메시지</h2>
+  <div class="row">
+    <label>대화 상대 User ID <input id="messageTargetUserId" type="number"></label>
+  </div>
+  <button id="btnMessageLoad" class="secondary">대화 내역 조회</button>
+  <div id="messageThread"></div>
+  <div class="row">
+    <label>메시지 <input id="messageBody" type="text" placeholder="메시지를 입력하세요"></label>
+  </div>
+  <button id="btnMessageSend">전송</button>
+</section>
+
+<section>
   <h2>응답 로그</h2>
   <pre id="log">여기에 마지막 API 응답이 표시됩니다.</pre>
 </section>
@@ -296,6 +387,18 @@
       <button id="btnRequestResync">RequestResync 호출</button>
     </div>
   </div>
+</section>
+
+<section>
+  <h2>SocialHub 연결 <span id="socialHubStatus" class="hub-status">연결 안 됨</span></h2>
+  <div style="font-size:12px;color:#666;margin-bottom:8px">
+    친구 요청/수락/거절/취소/삭제·1:1 메시지·프레즌스는 전부 이 연결(/hubs/social)로 실시간 수신됩니다.
+    README 9절 스펙대로 로그인 직후 자동으로 연결되므로 평소엔 버튼을 누를 필요가 없습니다(연결이 끊겼을 때 재연결용).
+  </div>
+  <button id="btnSocialConnect">연결(Connect)</button>
+  <button id="btnSocialDisconnect" class="secondary">연결 해제</button>
+  <button id="btnSetPresenceOnline">SetPresence(online)</button>
+  <button id="btnSetPresenceAway" class="secondary">SetPresence(away)</button>
 </section>
 
 <section>
@@ -373,7 +476,10 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
     email: f.get('email'), password: f.get('password'), nickname: f.get('nickname'),
   }, false);
   log('POST /auth/register', result);
-  if (result.status === 201 || result.status === 200) saveAuth(result.body);
+  if (result.status === 201 || result.status === 200) {
+    saveAuth(result.body);
+    connectSocialHub().catch((err) => logGameEvent('social auto-connect 실패', { message: String(err) }));
+  }
 });
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -383,7 +489,10 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     email: f.get('email'), password: f.get('password'),
   }, false);
   log('POST /auth/login', result);
-  if (result.status === 200) saveAuth(result.body);
+  if (result.status === 200) {
+    saveAuth(result.body);
+    connectSocialHub().catch((err) => logGameEvent('social auto-connect 실패', { message: String(err) }));
+  }
 });
 
 document.getElementById('btnMe').addEventListener('click', async () => {
@@ -393,6 +502,7 @@ document.getElementById('btnMe').addEventListener('click', async () => {
 document.getElementById('btnLogout').addEventListener('click', async () => {
   const result = await api('/auth/logout', 'POST');
   log('POST /auth/logout', result);
+  if (socialConnection) { await socialConnection.stop(); socialConnection = null; setSocialHubStatus(false); }
   clearAuth();
 });
 
@@ -484,6 +594,21 @@ function removeRoomMember(userId) {
   renderRoomMembers();
 }
 
+function setRoomHost(newHostId) {
+  if (!currentRoomMembers) return;
+  currentRoomMembers.hostId = newHostId;
+  for (const m of currentRoomMembers.members.values()) m.isHost = m.userId === newHostId;
+  renderRoomMembers();
+}
+
+function setMemberDisconnected(userId, disconnected) {
+  if (!currentRoomMembers) return;
+  const m = currentRoomMembers.members.get(userId);
+  if (!m) return;
+  m.disconnected = disconnected;
+  renderRoomMembers();
+}
+
 function renderRoomMembers() {
   const status = document.getElementById('roomMembersStatus');
   const list = document.getElementById('roomMembersList');
@@ -499,7 +624,9 @@ function renderRoomMembers() {
   for (const m of currentRoomMembers.members.values()) {
     const div = document.createElement('div');
     div.className = 'player-card';
-    div.textContent = `${m.isHost ? '👑 ' : ''}${m.nickname} (userId=${m.userId})`;
+    div.textContent =
+      `${m.isHost ? '👑 ' : ''}${m.nickname} (userId=${m.userId})` +
+      (m.disconnected ? ' ⏳ 재접속 대기 중(1분)' : '');
     list.appendChild(div);
   }
 }
@@ -620,10 +747,17 @@ async function connectHub() {
   connection.on('TurnChanged', (msg) => logGameEvent('TurnChanged', msg));
   connection.on('PlayerJoined', (msg) => { logGameEvent('PlayerJoined', msg); addRoomMember(msg.userId, msg.nickname); refreshRooms(); });
   connection.on('PlayerLeft', (msg) => { logGameEvent('PlayerLeft', msg); removeRoomMember(msg.userId); refreshRooms(); });
+  connection.on('HostChanged', (msg) => { logGameEvent('HostChanged', msg); setRoomHost(msg.newHostId); refreshRooms(); });
+  connection.on('PlayerDisconnected', (msg) => { logGameEvent('PlayerDisconnected', msg); setMemberDisconnected(msg.userId, true); });
+  connection.on('PlayerReconnected', (msg) => { logGameEvent('PlayerReconnected', msg); setMemberDisconnected(msg.userId, false); });
   connection.on('NobleAwarded', (msg) => logGameEvent('NobleAwarded', msg));
   connection.on('NobleChoiceRequired', (msg) => logGameEvent('NobleChoiceRequired', msg));
   connection.on('FinalRoundTriggered', (msg) => logGameEvent('FinalRoundTriggered', msg));
-  connection.on('GameOver', (msg) => logGameEvent('GameOver', msg));
+  connection.on('GameOver', (msg) => {
+    logGameEvent('GameOver', msg);
+    refreshRooms();
+    if (msg.reason === 'abandoned') alert('상대방이 모두 나가서 게임이 종료되었습니다. 방은 대기 상태로 돌아갑니다.');
+  });
   connection.on('MatchFound', async (msg) => {
     logGameEvent('MatchFound', msg);
     document.getElementById('selectedRoomId').value = msg.roomId;
@@ -634,6 +768,15 @@ async function connectHub() {
       if (detail.status === 200) seedRoomMembers(detail.body);
     } catch (err) {
       logGameEvent('auto-join(매칭 성사) 실패', { message: String(err) });
+    }
+  });
+  // 친구 요청/프레즌스/메시지 관련 이벤트는 전부 SocialHub(connectSocialHub 참고)로 옮겨감.
+  connection.on('RoomInvite', (msg) => {
+    logGameEvent('RoomInvite', msg);
+    if (confirm(`${msg.fromNickname}님이 방(${msg.roomId})에 초대했습니다. 참가하시겠습니까?`)) {
+      document.getElementById('selectedRoomId').value = msg.roomId;
+      document.getElementById('joinPassword').value = '';
+      document.getElementById('btnJoinRoom').click();
     }
   });
   connection.onclose(() => { hubConnection = null; setHubStatus(false); clearRoomMembers(); });
@@ -660,6 +803,73 @@ document.getElementById('btnHubDisconnect').addEventListener('click', async () =
   setHubStatus(false);
   clearRoomMembers();
 });
+
+// ── SocialHub (친구/메시지/프레즌스, README 9절) ──────────────────────
+let socialConnection = null;
+
+function setSocialHubStatus(connected) {
+  const el = document.getElementById('socialHubStatus');
+  el.textContent = connected ? '연결됨' : '연결 안 됨';
+  el.classList.toggle('connected', connected);
+}
+
+async function connectSocialHub() {
+  if (socialConnection) return socialConnection;
+  if (!state.accessToken) throw new Error('먼저 로그인하세요.');
+
+  const connection = new signalR.HubConnectionBuilder()
+    .withUrl(`/hubs/social?access_token=${state.accessToken}`)
+    .withAutomaticReconnect()
+    .build();
+
+  connection.on('FriendRequestReceived', (msg) => { logGameEvent('FriendRequestReceived', msg); refreshFriendRequests(); });
+  connection.on('FriendRequestAccepted', (msg) => { logGameEvent('FriendRequestAccepted', msg); refreshFriendRequests(); refreshFriends(); });
+  connection.on('FriendRequestDeclined', (msg) => { logGameEvent('FriendRequestDeclined', msg); refreshFriendRequests(); });
+  connection.on('FriendRequestCancelled', (msg) => { logGameEvent('FriendRequestCancelled', msg); refreshFriendRequests(); });
+  connection.on('FriendRemoved', (msg) => { logGameEvent('FriendRemoved', msg); refreshFriends(); });
+  connection.on('FriendStatusChanged', (msg) => { logGameEvent('FriendStatusChanged', msg); refreshFriends(); });
+  connection.on('FriendMessageReceived', (msg) => {
+    logGameEvent('FriendMessageReceived', msg);
+    const openTargetId = currentMessageTargetUserId();
+    if (openTargetId && msg.fromUserId === openTargetId) loadFriendMessages(openTargetId);
+  });
+  connection.onclose(() => { socialConnection = null; setSocialHubStatus(false); });
+
+  await connection.start();
+  socialConnection = connection;
+  setSocialHubStatus(true);
+  logGameEvent('social connected', { userId: state.userId });
+  return socialConnection;
+}
+
+document.getElementById('btnSocialConnect').addEventListener('click', async () => {
+  try {
+    await connectSocialHub();
+  } catch (err) {
+    logGameEvent('social connect error', { message: String(err) });
+  }
+});
+
+document.getElementById('btnSocialDisconnect').addEventListener('click', async () => {
+  if (!socialConnection) return;
+  await socialConnection.stop();
+  socialConnection = null;
+  setSocialHubStatus(false);
+});
+
+async function invokeSocialHub(method, ...args) {
+  if (!socialConnection) return alert('먼저 SocialHub에 연결하세요.');
+  try {
+    const result = await socialConnection.invoke(method, ...args);
+    logGameEvent(`invoke ${method} 성공`, { args });
+    return result;
+  } catch (err) {
+    logGameEvent(`invoke ${method} 실패`, { message: String(err) });
+  }
+}
+
+document.getElementById('btnSetPresenceOnline').addEventListener('click', () => invokeSocialHub('SetPresence', 'online'));
+document.getElementById('btnSetPresenceAway').addEventListener('click', () => invokeSocialHub('SetPresence', 'away'));
 
 async function invokeHub(method, ...args) {
   if (!hubConnection) return alert('먼저 GameHub에 연결하세요.');
@@ -868,6 +1078,266 @@ document.getElementById('btnLeaderboardSearch').addEventListener('click', async 
   const result = await api(`/leaderboard/${playerCount}/search?query=${query}`);
   log(`GET /leaderboard/${playerCount}/search?query=${query}`, result);
   if (result.status === 200) renderLeaderboard(result.body.entries, null);
+});
+
+// ── 프로필 ──────────────────────────────────────────────────────────
+// /profile 그룹은 인증이 필요해서 <img src="...">로는 Authorization 헤더를 못 붙인다.
+// 그래서 fetch로 직접 받아 blob object URL로 바꿔서 <img>에 넣는다.
+async function fetchAvatarObjectUrl(url) {
+  const headers = {};
+  if (state.accessToken) headers['Authorization'] = `Bearer ${state.accessToken}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+async function renderProfile(p) {
+  const summary = document.getElementById('profileSummary');
+  summary.innerHTML = `
+    <img id="profileAvatarImg" alt="avatar"
+      style="width:64px;height:64px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:10px;background:#e5e7eb;display:${p.avatarUrl ? 'inline-block' : 'none'}">
+    ${p.avatarUrl ? '' : '<span class="badge" style="margin-right:10px">이미지 없음</span>'}
+    <b>${p.nickname}</b> (userId=${p.userId})<br>
+    총 플레이 수: ${p.totalGamesPlayed} &nbsp; 전체 평균 등수: ${p.overallAvgPlace}
+  `;
+
+  if (p.avatarUrl) {
+    const objectUrl = await fetchAvatarObjectUrl(p.avatarUrl);
+    const img = document.getElementById('profileAvatarImg');
+    if (img && objectUrl) img.src = objectUrl;
+  }
+
+  const rankingTbody = document.querySelector('#profileRankingTable tbody');
+  rankingTbody.innerHTML = '';
+  for (const r of p.rankings) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.playerCount}</td><td>${r.rank}</td><td>${r.mmr}</td><td>${r.gamesPlayed}</td><td>${r.avgPlace}</td>`;
+    rankingTbody.appendChild(tr);
+  }
+
+  const matchTbody = document.querySelector('#profileMatchTable tbody');
+  matchTbody.innerHTML = '';
+  for (const m of p.recentMatches) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${m.gameId}</td><td>${m.playerCount}</td><td>${m.place}</td><td>${m.score}</td><td>${m.isRanked ? 'Y' : 'N'}</td><td>${new Date(m.playedAt).toLocaleString()}</td>`;
+    matchTbody.appendChild(tr);
+  }
+}
+
+function currentProfileUserId() {
+  const value = document.getElementById('profileUserId').value;
+  return value ? Number(value) : null;
+}
+
+document.getElementById('btnProfileLoad').addEventListener('click', async () => {
+  const userId = currentProfileUserId();
+  const path = userId ? `/profile/${userId}` : '/profile/me';
+  const result = await api(path);
+  log(`GET ${path}`, result);
+  if (result.status === 200) renderProfile(result.body);
+});
+
+async function apiUpload(path, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const headers = {};
+  if (state.accessToken) headers['Authorization'] = `Bearer ${state.accessToken}`;
+  const res = await fetch(path, { method: 'POST', headers, body: formData });
+  const text = await res.text();
+  let parsed;
+  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
+  return { status: res.status, body: parsed };
+}
+
+document.getElementById('btnAvatarUpload').addEventListener('click', async () => {
+  const file = document.getElementById('avatarFile').files[0];
+  if (!file) return alert('업로드할 이미지 파일을 선택하세요.');
+  const result = await apiUpload('/profile/avatar', file);
+  log('POST /profile/avatar', result);
+  if (result.status === 200) renderProfile(result.body);
+});
+
+document.getElementById('btnAvatarDelete').addEventListener('click', async () => {
+  const result = await api('/profile/avatar', 'DELETE');
+  log('DELETE /profile/avatar', result);
+  if (result.status === 204) {
+    document.getElementById('profileUserId').value = '';
+    const reload = await api('/profile/me');
+    if (reload.status === 200) renderProfile(reload.body);
+  }
+});
+
+// ── 친구 ──────────────────────────────────────────────────────────
+// 친구 요청/수락/거절/취소/삭제·메시지·프레즌스의 실시간 알림은 전부 SocialHub 연결
+// (위 connectSocialHub 핸들러 참고, 로그인 시 자동 연결됨)로 받는다. 방 초대(RoomInvite)만
+// 방 그룹과 묶여 있어서 GameHub 쪽에 남아있다.
+document.getElementById('btnFriendSearch').addEventListener('click', async () => {
+  const query = encodeURIComponent(document.getElementById('friendSearchQuery').value || '');
+  const result = await api(`/friends/search?query=${query}`);
+  log(`GET /friends/search?query=${query}`, result);
+  const tbody = document.querySelector('#friendSearchTable tbody');
+  tbody.innerHTML = '';
+  for (const u of result.body?.users || []) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${u.userId}</td><td>${u.nickname}</td><td></td>`;
+    const btn = document.createElement('button');
+    btn.textContent = '요청 보내기';
+    btn.addEventListener('click', async () => {
+      const sendResult = await api('/friends/requests', 'POST', { targetUserId: u.userId });
+      log('POST /friends/requests', sendResult);
+      if (sendResult.status === 201 || sendResult.status === 200) refreshFriendRequests();
+    });
+    tr.lastElementChild.appendChild(btn);
+    tbody.appendChild(tr);
+  }
+});
+
+function renderRequestList(containerId, requests, kind) {
+  const container = document.getElementById(containerId);
+  if (!requests.length) {
+    container.textContent = '없음';
+    return;
+  }
+  container.innerHTML = '';
+  for (const r of requests) {
+    const div = document.createElement('div');
+    div.className = 'friend-row';
+    div.innerHTML = `<span>${r.nickname} (userId=${r.userId}, requestId=${r.requestId})</span>`;
+    const actions = document.createElement('span');
+    actions.className = 'actions';
+    if (kind === 'incoming') {
+      const acceptBtn = document.createElement('button');
+      acceptBtn.textContent = '수락';
+      acceptBtn.addEventListener('click', async () => {
+        const result = await api(`/friends/requests/${r.requestId}/accept`, 'POST');
+        log(`POST /friends/requests/${r.requestId}/accept`, result);
+        if (result.status === 200) { refreshFriendRequests(); refreshFriends(); }
+      });
+      actions.appendChild(acceptBtn);
+    }
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'secondary';
+    removeBtn.textContent = kind === 'incoming' ? '거절' : '취소';
+    removeBtn.addEventListener('click', async () => {
+      const result = await api(`/friends/requests/${r.requestId}`, 'DELETE');
+      log(`DELETE /friends/requests/${r.requestId}`, result);
+      if (result.status === 204) refreshFriendRequests();
+    });
+    actions.appendChild(removeBtn);
+    div.appendChild(actions);
+    container.appendChild(div);
+  }
+}
+
+async function refreshFriendRequests() {
+  const result = await api('/friends/requests');
+  log('GET /friends/requests', result);
+  if (result.status !== 200) return;
+  renderRequestList('incomingRequests', result.body.incoming, 'incoming');
+  renderRequestList('outgoingRequests', result.body.outgoing, 'outgoing');
+}
+
+document.getElementById('btnFriendRequestsRefresh').addEventListener('click', refreshFriendRequests);
+
+async function refreshFriends() {
+  const result = await api('/friends');
+  log('GET /friends', result);
+  const container = document.getElementById('friendList');
+  if (result.status !== 200) return;
+  const friends = result.body.friends || [];
+  if (!friends.length) {
+    container.textContent = '친구가 없습니다.';
+    return;
+  }
+  container.innerHTML = '';
+  for (const f of friends) {
+    const div = document.createElement('div');
+    div.className = 'friend-row';
+    div.innerHTML = `<span><span class="online-dot status-${f.status}" title="${f.status}"></span>${f.nickname} (userId=${f.userId}, ${f.status})</span>`;
+    const actions = document.createElement('span');
+    actions.className = 'actions';
+
+    const msgBtn = document.createElement('button');
+    msgBtn.className = 'secondary';
+    msgBtn.textContent = '메시지';
+    msgBtn.addEventListener('click', () => {
+      document.getElementById('messageTargetUserId').value = f.userId;
+      loadFriendMessages(f.userId);
+    });
+    actions.appendChild(msgBtn);
+
+    const inviteBtn = document.createElement('button');
+    inviteBtn.textContent = '이 방에 초대';
+    inviteBtn.addEventListener('click', async () => {
+      const roomId = currentRoomId();
+      if (!roomId) return alert('먼저 선택된 Room ID를 입력하세요.');
+      const result = await api(`/rooms/${roomId}/invites`, 'POST', { targetUserId: f.userId });
+      log(`POST /rooms/${roomId}/invites`, result);
+    });
+    actions.appendChild(inviteBtn);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'danger';
+    removeBtn.textContent = '삭제';
+    removeBtn.addEventListener('click', async () => {
+      const result = await api(`/friends/${f.userId}`, 'DELETE');
+      log(`DELETE /friends/${f.userId}`, result);
+      if (result.status === 204) refreshFriends();
+    });
+    actions.appendChild(removeBtn);
+
+    div.appendChild(actions);
+    container.appendChild(div);
+  }
+}
+
+document.getElementById('btnFriendsRefresh').addEventListener('click', refreshFriends);
+
+function currentMessageTargetUserId() {
+  const value = document.getElementById('messageTargetUserId').value;
+  return value ? Number(value) : null;
+}
+
+function renderMessages(messages) {
+  const thread = document.getElementById('messageThread');
+  thread.innerHTML = '';
+  for (const m of messages) {
+    const div = document.createElement('div');
+    div.className = `msg ${m.senderId === Number(state.userId) ? 'mine' : 'theirs'}`;
+    div.textContent = `${m.body} (${new Date(m.createdAt).toLocaleTimeString()})`;
+    thread.appendChild(div);
+  }
+  thread.scrollTop = thread.scrollHeight;
+}
+
+async function loadFriendMessages(userId) {
+  const result = await api(`/friends/${userId}/messages`);
+  log(`GET /friends/${userId}/messages`, result);
+  if (result.status === 200) renderMessages(result.body.messages);
+}
+
+document.getElementById('btnMessageLoad').addEventListener('click', () => {
+  const userId = currentMessageTargetUserId();
+  if (!userId) return alert('대화 상대 User ID를 입력하세요.');
+  loadFriendMessages(userId);
+});
+
+document.getElementById('btnMessageSend').addEventListener('click', async () => {
+  const userId = currentMessageTargetUserId();
+  if (!userId) return alert('대화 상대 User ID를 입력하세요.');
+  const bodyInput = document.getElementById('messageBody');
+  const body = bodyInput.value.trim();
+  if (!body) return;
+  // README SocialHub 스펙대로 REST 대신 SendFriendMessage invoke로 전송한다.
+  try {
+    await connectSocialHub();
+    await invokeSocialHub('SendFriendMessage', userId, body);
+    bodyInput.value = '';
+    loadFriendMessages(userId);
+  } catch (err) {
+    logGameEvent('SendFriendMessage 실패', { message: String(err) });
+  }
 });
 </script>
 </body>

@@ -32,6 +32,21 @@ public static class RankingCalculator
         }
 
         var opponentCount = players.Count - 1;
-        return totals.ToDictionary(kv => kv.Key, kv => (int)Math.Round(kv.Value / opponentCount));
+        var averaged = totals.ToDictionary(kv => kv.Key, kv => kv.Value / opponentCount);
+
+        // 개별 반올림을 그대로 쓰면 정수 합이 정확히 0이 안 될 수 있다(누적되면 전체 MMR 총량이 드리프트함).
+        // UserId 오름차순으로 마지막 한 명을 제외하고 반올림한 뒤, 마지막 한 명은 "나머지 합의 음수"로
+        // 확정해서 델타 합이 항상 정확히 0이 되도록 한다.
+        var orderedKeys = averaged.Keys.OrderBy(k => k).ToList();
+        var result = new Dictionary<int, int>();
+        var runningSum = 0;
+        for (var i = 0; i < orderedKeys.Count - 1; i++)
+        {
+            var rounded = (int)Math.Round(averaged[orderedKeys[i]]);
+            result[orderedKeys[i]] = rounded;
+            runningSum += rounded;
+        }
+        result[orderedKeys[^1]] = -runningSum;
+        return result;
     }
 }

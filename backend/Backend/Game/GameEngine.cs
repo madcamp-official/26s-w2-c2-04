@@ -21,6 +21,8 @@ public static class GameEngine
     {
         if (playerIds.Count is < 2 or > 4)
             throw new GameRuleException("INVALID_PAYLOAD", "플레이어는 2~4명이어야 합니다.");
+        if (playerIds.Distinct().Count() != playerIds.Count)
+            throw new GameRuleException("INVALID_PAYLOAD", "중복된 플레이어가 있습니다.");
 
         random ??= new Random();
 
@@ -55,6 +57,7 @@ public static class GameEngine
     {
         var player = GetActingPlayer(state, playerId);
         EnsureNotAwaitingDiscard(player);
+        EnsureNoPendingNobleChoice(state);
 
         if (gems.Keys.Any(g => g == GemType.Gold))
             throw new GameRuleException("INVALID_TOKEN_SELECTION", "골드 토큰은 TakeTokens로 획득할 수 없습니다.");
@@ -90,6 +93,7 @@ public static class GameEngine
 
         var player = GetActingPlayer(state, playerId);
         EnsureNotAwaitingDiscard(player);
+        EnsureNoPendingNobleChoice(state);
 
         var card = source == "Reserved"
             ? player.ReservedCards.FirstOrDefault(c => c.Id == cardId)
@@ -138,6 +142,7 @@ public static class GameEngine
         else if (eligibleNobles.Count > 1)
         {
             choiceCandidates = eligibleNobles.Select(n => n.Id).ToList();
+            state.PendingNobleChoiceIds = choiceCandidates;
         }
 
         return FinalizeTurn(state, player, holdForNobleChoice: choiceCandidates.Count > 0, autoAwarded, choiceCandidates);
@@ -147,6 +152,7 @@ public static class GameEngine
     {
         var player = GetActingPlayer(state, playerId);
         EnsureNotAwaitingDiscard(player);
+        EnsureNoPendingNobleChoice(state);
 
         if (player.ReservedCards.Count >= 3)
             throw new GameRuleException("RESERVE_LIMIT_EXCEEDED", "예약 카드는 3장을 초과할 수 없습니다.");
@@ -192,6 +198,8 @@ public static class GameEngine
 
         foreach (var (color, amount) in gems)
         {
+            if (amount < 0)
+                throw new GameRuleException("INVALID_PAYLOAD", "반납 수량은 음수일 수 없습니다.");
             if (player.Tokens.GetValueOrDefault(color) < amount)
                 throw new GameRuleException("INVALID_PAYLOAD", "보유한 토큰보다 많이 반납할 수 없습니다.");
         }
@@ -213,6 +221,7 @@ public static class GameEngine
     public static ActionOutcome ClaimNoble(GameState state, int playerId, string nobleId)
     {
         var player = GetActingPlayer(state, playerId);
+        EnsureNotAwaitingDiscard(player);
 
         var noble = state.BoardNobles.FirstOrDefault(n => n.Id == nobleId)
             ?? throw new GameRuleException("NOBLE_NOT_ELIGIBLE", "존재하지 않는 귀족입니다.");
@@ -222,8 +231,42 @@ public static class GameEngine
 
         state.Sequence++;
         AwardNoble(state, player, noble);
+        state.PendingNobleChoiceIds = [];
 
         return FinalizeTurn(state, player, holdForNobleChoice: false, [noble.Id]);
+    }
+
+    /// <summary>
+    /// 부분 탈주(2명 이상 남는 경우) 확정 시 그 플레이어를 게임에서 완전히 제거한다.
+    /// 남은 인원이 1명 이하가 되는 경우는 호출부(RoomDepartureService)가 별도로
+    /// 게임 강제 종료 경로를 타므로 이 메서드를 쓰지 않는다.
+    /// </summary>
+    public static bool RemovePlayer(GameState state, int playerId)
+    {
+        if (!state.Players.ContainsKey(playerId))
+            return false;
+
+        var wasCurrentPlayer = state.CurrentPlayerId == playerId;
+        var removedIndex = state.PlayerOrder.IndexOf(playerId);
+        var nextPlayerId = wasCurrentPlayer
+            ? state.PlayerOrder[(removedIndex + 1) % state.PlayerOrder.Count]
+            : state.CurrentPlayerId;
+
+        // FinalRound 중 LastTurnPlayerId가 나간 사람이면 그 앞 순번으로 재지정해야 라운드가 정상적으로 끝난다.
+        if (state.Phase == GamePhase.FinalRound && state.LastTurnPlayerId == playerId)
+            state.LastTurnPlayerId = state.PlayerOrder[(removedIndex - 1 + state.PlayerOrder.Count) % state.PlayerOrder.Count];
+
+        state.PlayerOrder.RemoveAt(removedIndex);
+        state.Players.Remove(playerId);
+
+        if (wasCurrentPlayer)
+        {
+            state.PendingNobleChoiceIds = []; // 선택 못 하고 나갔으면 포기 처리(귀족은 보드에 남아 재평가됨)
+            state.TurnNumber++;
+        }
+        state.CurrentPlayerIndex = state.PlayerOrder.IndexOf(nextPlayerId);
+        state.Sequence++;
+        return true;
     }
 
     private static PlayerState GetActingPlayer(GameState state, int playerId)
@@ -231,6 +274,12 @@ public static class GameEngine
         if (state.CurrentPlayerId != playerId)
             throw new GameRuleException("NOT_YOUR_TURN", "당신의 턴이 아닙니다.");
         return state.Players[playerId];
+    }
+
+    private static void EnsureNoPendingNobleChoice(GameState state)
+    {
+        if (state.PendingNobleChoiceIds.Count > 0)
+            throw new GameRuleException("NOBLE_CHOICE_PENDING", "먼저 귀족을 선택해야 합니다.");
     }
 
     private static void EnsureNotAwaitingDiscard(PlayerState player)
