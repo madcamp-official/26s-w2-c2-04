@@ -219,8 +219,11 @@ public class GameHub(GameStateStore stateStore, AppDbContext db, PresenceStore p
             game.FinishedAt = DateTime.UtcNow;
             game.StateJson = JsonSerializer.Serialize(state);
 
-            var room = await db.Rooms.FirstAsync(r => r.Id == roomId);
+            var room = await db.Rooms.Include(r => r.Players).FirstAsync(r => r.Id == roomId);
             room.Status = RoomStatus.Waiting;
+            // 다음 판을 위해 준비 상태를 전원 초기화한다(일반 방 준비 기능).
+            foreach (var p in room.Players)
+                p.IsReady = false;
 
             await RecordResultsAsync(db, game.Id, room, state, outcome.FinalScores!);
             await stateStore.RemoveAsync(roomId);

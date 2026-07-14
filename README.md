@@ -141,8 +141,11 @@
 | GET | `/rooms/{roomId}` | 방 상세 조회 | 없음 | Room 객체(생성 응답과 동일 구조, 예: `{"roomId": "r_5566", "hostId": "u_1024", "status": "WAITING", "maxPlayers": 4, "players": [...], "createdAt": "2026-07-10T09:10:00Z"}`) | 인증 필요 |
 | POST | `/rooms/{roomId}/join` | 방 참가(좌석 예약) | `{"password": "1234"}` (비공개 방일 때만, 그 외엔 `{}`) | 갱신된 Room 객체(생성 응답과 동일 구조) | 인증 필요, 정원/비밀번호 검증(409/403) |
 | POST | `/rooms/{roomId}/leave` | 방 퇴장 | 없음 | 204 No Content | 인증 필요 |
-| POST | `/rooms/{roomId}/start` | 게임 시작 | 없음 | `{"gameId": "g_9911", "phase": "PLAYING"}` | 방장만 가능(403), 이후 SignalR로 진행 |
+| POST | `/rooms/{roomId}/ready` | 준비 상태 변경 **[신규]** | `{"ready": true}` | 갱신된 Room 객체 | 인증 필요. 캐주얼(일반) 방의 방장이 아닌 멤버 전용 — 방장이 호출하면 400(`HOST_CANNOT_READY`), 방 멤버가 아니면 403(`NOT_A_MEMBER`). 성공 시 방 그룹에 SignalR `PlayerReadyChanged` 브로드캐스트(8절) |
+| POST | `/rooms/{roomId}/start` | 게임 시작 | 없음 | `{"gameId": "g_9911", "phase": "PLAYING"}` | 방장만 가능(403). 캐주얼 방은 방장을 제외한 전원이 준비 완료 상태여야 함(아니면 409 `MEMBERS_NOT_READY`) — 랭킹전은 매칭 성사 시 자동 시작이라 이 제약과 무관. 이후 SignalR로 진행 |
 | DELETE | `/rooms/{roomId}` | 방 삭제 | 없음 | 204 No Content | 방장만, 시작 전에만 가능(409) |
+
+방 응답의 각 `players[]` 항목은 `{"userId": ..., "nickname": ..., "isHost": ..., "isReady": ...}` 구조입니다(`isReady` **[신규]** — 게임이 끝나고 방이 다시 WAITING으로 돌아가면 전원 초기화됨).
 
 ### 4-1. 매칭(Matchmaking) API — 랭킹전 진입
 
@@ -212,6 +215,7 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
 | ON | `NobleAwarded` | 귀족 타일 자동 획득 | - | `{"playerId": "u_1024", "nobleId": "n_04"}` | |
 | ON | `NobleChoiceRequired` | 귀족 동시 충족, 선택 필요 | - | `{"playerId": "u_1024", "candidateNobleIds": ["n_04", "n_07"]}` | `ClaimNoble` 호출 유도 |
 | ON | `PlayerJoined` | 방 인원 입장 | - | `{"userId": "u_2048", "nickname": "김도현"}` | |
+| ON | `PlayerReadyChanged` | 준비 상태 변경 **[신규]** | - | `{"userId": "u_2048", "ready": true}` | `POST /rooms/{roomId}/ready` 성공 시 방 그룹 전체에 push(4절 참고) |
 | ON | `MatchFound` | 랭킹전 매칭 성사 | - | `{"roomId": "r_5566", "playerCount": 4}` | `POST /matchmaking/{n}/ranked`로 대기열에 등록한 유저에게 매칭이 성사되는 즉시 push. 수신 후 `JoinRoom` 호출 |
 | ON | `PlayerLeft` | 방 인원 퇴장 | - | `{"userId": "u_2048", "nickname": "김도현"}` | |
 | ON | `FinalRoundTriggered` | 15점 달성, 마지막 라운드 진입 | - | `{"triggeredBy": "u_1024", "lastTurnPlayerId": "u_2048"}` | |
@@ -254,6 +258,8 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 | - | `OAUTH_VERIFICATION_FAILED` | 소셜 로그인 토큰 검증 실패 | - | HTTP 401 | 카카오/네이버/구글 API 검증 실패 |
 | - | `ROOM_NOT_FOUND` | 방 없음 | - | HTTP 404 | 잘못된 roomId |
 | - | `ROOM_FULL` | 방 인원 초과 | - | HTTP 409 | maxPlayers 도달 |
+| - | `HOST_CANNOT_READY` **[신규]** | 방장이 준비 API 호출 | - | HTTP 400 | 방장은 준비 상태가 필요 없음 |
+| - | `MEMBERS_NOT_READY` **[신규]** | 미준비 멤버가 있는 상태로 시작 시도 | - | HTTP 409 | 캐주얼 방에서 방장 제외 전원 준비 완료 전엔 `/start` 불가 |
 | - | `NOT_YOUR_TURN` | 턴 순서 위반 | - | `HubException` | currentPlayerId 불일치 |
 | - | `INVALID_TOKEN_SELECTION` | 토큰 획득 규칙 위반 | - | `HubException` | 3색 미충족/동색 4개 미만 |
 | - | `TOKEN_LIMIT_EXCEEDED` | 토큰 10개 초과 | - | `HubException` | 반납 없이 턴 종료 시도 |

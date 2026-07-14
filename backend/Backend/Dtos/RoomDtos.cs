@@ -4,7 +4,9 @@ public record CreateRoomRequest(int? MaxPlayers, bool? IsPrivate, string? Passwo
 
 public record JoinRoomRequest(string? Password);
 
-public record RoomPlayerResponse(int UserId, string Nickname, bool IsHost);
+public record ReadyRequest(bool Ready);
+
+public record RoomPlayerResponse(int UserId, string Nickname, bool IsHost, bool IsReady);
 
 public record RoomResponse(
     int RoomId,

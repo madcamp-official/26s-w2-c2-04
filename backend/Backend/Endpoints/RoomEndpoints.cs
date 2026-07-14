@@ -200,6 +200,36 @@ public static class RoomEndpoints
         })
             .WithName("LeaveRoom");
 
+        group.MapPost("/{roomId:int}/ready", async (int roomId, ReadyRequest request, HttpContext http, AppDbContext db, IHubContext<GameHub> hubContext) =>
+        {
+            var userId = http.User.GetUserId();
+
+            var room = await db.Rooms.Include(r => r.Players).ThenInclude(p => p.User).FirstOrDefaultAsync(r => r.Id == roomId);
+            if (room is null)
+                return Results.NotFound(new { code = "ROOM_NOT_FOUND", message = "방을 찾을 수 없습니다." });
+
+            var player = room.Players.FirstOrDefault(p => p.UserId == userId);
+            if (player is null)
+                return Results.Json(
+                    new { code = "NOT_A_MEMBER", message = "방에 있는 유저만 준비 상태를 바꿀 수 있습니다." },
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            if (room.HostId == userId)
+                return Results.BadRequest(new { code = "HOST_CANNOT_READY", message = "방장은 준비 상태가 필요 없습니다." });
+
+            if (room.Status != RoomStatus.Waiting)
+                return Results.Conflict(new { code = "ROOM_ALREADY_STARTED", message = "이미 게임이 시작된 방입니다." });
+
+            player.IsReady = request.Ready;
+            await db.SaveChangesAsync();
+
+            await hubContext.Clients.Group(GameHubMessages.GroupName(roomId))
+                .SendAsync("PlayerReadyChanged", new { userId, ready = player.IsReady });
+
+            return Results.Ok(MapRoom(room));
+        })
+            .WithName("SetReady");
+
         group.MapPost("/{roomId:int}/start", async (int roomId, HttpContext http, AppDbContext db, GameStateStore stateStore, IHubContext<GameHub> hubContext) =>
         {
             var userId = http.User.GetUserId();
@@ -218,6 +248,10 @@ public static class RoomEndpoints
 
             if (room.Players.Count < 2)
                 return Results.Conflict(new { code = "NOT_ENOUGH_PLAYERS", message = "최소 2명이 필요합니다." });
+
+            if (room.Ruleset == RoomRuleset.Casual &&
+                room.Players.Any(p => p.UserId != room.HostId && !p.IsReady))
+                return Results.Conflict(new { code = "MEMBERS_NOT_READY", message = "모든 멤버가 준비를 완료해야 시작할 수 있습니다." });
 
             try
             {
@@ -339,6 +373,6 @@ public static class RoomEndpoints
     private static List<RoomPlayerResponse> MapPlayers(Room room) =>
         room.Players
             .OrderBy(p => p.JoinedAt)
-            .Select(p => new RoomPlayerResponse(p.UserId, p.User.Nickname, p.UserId == room.HostId))
+            .Select(p => new RoomPlayerResponse(p.UserId, p.User.Nickname, p.UserId == room.HostId, p.IsReady))
             .ToList();
 }
