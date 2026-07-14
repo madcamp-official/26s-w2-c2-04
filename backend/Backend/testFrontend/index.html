@@ -203,6 +203,7 @@
   <button id="btnGetRoom" class="secondary">상세 조회</button>
   <button id="btnJoinRoom">참가</button>
   <button id="btnLeaveRoom" class="secondary">퇴장</button>
+  <button id="btnToggleReady" class="secondary">준비/준비 취소</button>
   <button id="btnStartRoom">게임 시작</button>
   <button id="btnDeleteRoom" class="danger">삭제</button>
 </section>
@@ -610,6 +611,14 @@ function setMemberDisconnected(userId, disconnected) {
   renderRoomMembers();
 }
 
+function setMemberReady(userId, ready) {
+  if (!currentRoomMembers) return;
+  const m = currentRoomMembers.members.get(userId);
+  if (!m) return;
+  m.isReady = ready;
+  renderRoomMembers();
+}
+
 function renderRoomMembers() {
   const status = document.getElementById('roomMembersStatus');
   const list = document.getElementById('roomMembersList');
@@ -626,7 +635,7 @@ function renderRoomMembers() {
     const div = document.createElement('div');
     div.className = 'player-card';
     div.textContent =
-      `${m.isHost ? '👑 ' : ''}${m.nickname} (userId=${m.userId})` +
+      `${m.isHost ? '👑 ' : (m.isReady ? '✅ 준비완료 ' : '⬜ 준비 안 함 ')}${m.nickname} (userId=${m.userId})` +
       (m.disconnected ? ' ⏳ 재접속 대기 중(1분)' : '');
     list.appendChild(div);
   }
@@ -680,6 +689,16 @@ document.getElementById('btnLeaveRoom').addEventListener('click', async () => {
       }
     }
   }
+});
+
+document.getElementById('btnToggleReady').addEventListener('click', async () => {
+  const id = currentRoomId();
+  if (!id) return alert('Room ID를 입력하세요.');
+  const mine = currentRoomMembers?.members.get(Number(state.userId));
+  const nextReady = !(mine?.isReady);
+  const result = await api(`/rooms/${id}/ready`, 'POST', { ready: nextReady });
+  log(`POST /rooms/${id}/ready`, result);
+  if (result.status === 200) seedRoomMembers(result.body);
 });
 
 document.getElementById('btnStartRoom').addEventListener('click', async () => {
@@ -753,6 +772,7 @@ async function connectHub() {
   connection.on('HostChanged', (msg) => { logGameEvent('HostChanged', msg); setRoomHost(msg.newHostId); refreshRooms(); });
   connection.on('PlayerDisconnected', (msg) => { logGameEvent('PlayerDisconnected', msg); setMemberDisconnected(msg.userId, true); });
   connection.on('PlayerReconnected', (msg) => { logGameEvent('PlayerReconnected', msg); setMemberDisconnected(msg.userId, false); });
+  connection.on('PlayerReadyChanged', (msg) => { logGameEvent('PlayerReadyChanged', msg); setMemberReady(msg.userId, msg.ready); });
   connection.on('NobleAwarded', (msg) => logGameEvent('NobleAwarded', msg));
   connection.on('NobleChoiceRequired', (msg) => logGameEvent('NobleChoiceRequired', msg));
   connection.on('FinalRoundTriggered', (msg) => logGameEvent('FinalRoundTriggered', msg));
