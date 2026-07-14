@@ -6,7 +6,6 @@
 import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
-import 'package:flutter/painting.dart' show TextStyle, FontWeight;
 import '../../models/card.dart';
 import 'cost_pips.dart';
 
@@ -55,23 +54,18 @@ class CardComponent extends PositionComponent with TapCallbacks {
       ));
     }
 
-    add(
-      TextComponent(
-        text: '${card.points}',
-        position: Vector2(6, 4),
-        textRenderer: TextPaint(
-          style: const TextStyle(
-            color: Color(0xFFF6E6BD),
-            fontSize: 15,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-
     final remaining = remainingCost;
     if (remaining != null) {
-      addCostPipRow(this, amounts: remaining, componentSize: size);
+      // 카드 폭(size.x)에 비례한 값 — 예전 정사각 보드 시절의 "카드 가격
+      // 오버레이 크기 : 카드 크기" 비(고정 13px : 카드폭 ~120px)를 그대로
+      // 되살려 고정 비율로 만든 것. 절대 픽셀로 두면 게임보드 레이아웃이
+      // 바뀌어 카드가 작아지거나 커질 때마다 오버레이만 비율이 어긋난다.
+      addCostPipRow(
+        this,
+        amounts: remaining,
+        componentSize: size,
+        pipDiameter: size.x * cardPipRatio,
+      );
     }
 
     _selectionBorder = RectangleComponent(

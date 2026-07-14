@@ -33,6 +33,30 @@ class BoardComponent extends PositionComponent
     required this.onNobleTap,
   });
 
+  /// 콘텐츠 가로:세로 비율(정사각형이 아닌 가로로 넓은 직사각형). 아래 updateBoard()가
+  /// cardW를 1 단위로 두고 산출하는 레이아웃 상수(가로 = 귀족 열 0.75 + gap 0.05 +
+  /// 카드 5열 5.2 + gap 0.05 + 토큰 열 0.45, 세로 = 카드 3행 4.2 + gap 0.1)에서
+  /// 그대로 유도된 값이라, 두 상수 세트는 반드시 같이 바뀌어야 한다(어긋나면
+  /// updateBoard가 화면에 꽉 차지 않고 leftMargin/topMargin으로 레터박스된다).
+  /// play.dart의 _TableLayout이 Flame GameWidget에 배정하는 박스의 가로:세로
+  /// 비율도 이 값을 그대로 참조해 여백 없이 맞춘다.
+  static const double contentWidthUnits = 6.5;
+  static const double contentHeightUnits = 4.3;
+  static const double contentAspect = contentWidthUnits / contentHeightUnits;
+
+  /// 주어진 박스([boxWidth] x [boxHeight]) 안에 이 보드를 그릴 때 실제로 쓰일
+  /// 미구매 카드 한 장의 크기(가로, 세로). updateBoard()의 cardW/cardH 산출
+  /// 공식과 반드시 같은 값을 내야 하므로, updateBoard()도 이 메서드를 그대로
+  /// 쓴다. play.dart가 좌석 오버레이의 구매/예약 카드 위젯 크기를 게임보드의
+  /// 미구매 카드 크기에 비례해 고정할 때(0.5배) 이 메서드로 같은 cardW/cardH를
+  /// 얻는다.
+  static Vector2 cardSizeFor(double boxWidth, double boxHeight) {
+    final cardW = (boxWidth / contentWidthUnits < boxHeight / contentHeightUnits)
+        ? boxWidth / contentWidthUnits
+        : boxHeight / contentHeightUnits;
+    return Vector2(cardW, cardW * 1.4);
+  }
+
   final List<CardComponent> _cardComponents = [];
   final List<GemTokenComponent> _gemComponents = [];
   final List<DeckBackComponent> _deckBackComponents = [];
@@ -89,33 +113,45 @@ class BoardComponent extends PositionComponent
       deckRemainingByTier[tier.tier] = tier.deckRemaining;
     }
 
-    // 카드 폭을 기준으로 간격/귀족/토큰 크기를 모두 비례 산출한 뒤, 실제로 쓰이는
-    // 콘텐츠 전체의 가로/세로 크기(contentWidth/contentHeight)를 구해서 "보드
-    // 크기 - 콘텐츠 크기"의 남는 공간을 좌우/상하에 똑같이 나눠 마진으로 씁니다.
-    final cardW = size.x * 0.1575;
-    final cardH = cardW * 1.4;
+    // 카드 폭을 기준으로 간격/귀족/토큰 크기를 모두 비례 산출합니다. 보드는
+    // 정사각형이 아니라 가로로 넓은 직사각형이라, cardW는 가로 예산과 세로 예산
+    // 양쪽에서 각각 산출한 값 중 더 작은 쪽을 씁니다(contentAspect와 어긋난
+    // 박스가 들어와도 어느 한쪽이 넘치지 않도록).
+    final cardSize = cardSizeFor(size.x, size.y);
+    final cardW = cardSize.x;
+    final cardH = cardSize.y;
     final gap = cardW * 0.05;
+    // 귀족은 미구매 카드 열 "왼쪽"에 세로로, 토큰 뱅크는 "오른쪽"에 세로로 놓는다
+    // (예전에는 귀족이 맨 위 가로줄, 토큰이 맨 아래 가로줄이었다 — 보드를
+    // 정사각형에서 가로로 넓은 직사각형으로 바꾸면서 세로 공간을 절약하기 위해
+    // 옮겼다). 토큰 아이콘은 6개(5색+골드)를 세로로 쌓아야 해서 예전(0.55)보다
+    // 작게(0.45) 잡아야 카드 3행 높이 안에 들어온다.
     final nobleSize = Vector2.all(cardW * 0.75);
-    final tokenIconSize = cardW * 0.55;
+    final tokenIconSize = cardW * 0.45;
     final tokenLabelHeight = tokenIconSize * 0.4; // 아이콘 밑에 개수를 표시할 공간
     final tokenSize = Vector2(tokenIconSize, tokenIconSize + tokenLabelHeight);
 
-    // 가로: [덱 뒷면] + 공개 카드 4장(티어 줄). 예약 카드는 더 이상 보드 안에
-    // 그리지 않고, 각 플레이어의 좌석 오버레이(_PlayerSeatPanel)에서 보여준다.
-    final contentWidth = 5 * cardW + 4 * gap;
-    // 세로: 귀족 줄 + 티어 3줄 + 토큰 줄, 줄 사이 4번의 간격.
-    final contentHeight = nobleSize.y + 3 * cardH + tokenSize.y + 4 * gap;
+    // 가로: 귀족 열 + [덱 뒷면] + 공개 카드 4장(티어 줄) + 토큰 열. 예약 카드는
+    // 더 이상 보드 안에 그리지 않고, 각 플레이어의 게임보드 오버레이
+    // (_PlayerCardsRow)에서 보여준다.
+    final cardsBlockWidth = 5 * cardW + 4 * gap;
+    final contentWidth =
+        nobleSize.x + gap + cardsBlockWidth + gap + tokenSize.x;
+    // 세로: 티어 3줄 + 그 사이 2번의 간격만큼(귀족/토큰은 이제 별도 열이라 세로
+    // 예산에 끼지 않는다 — 대신 이 세로 폭 안에 각각 가운데 정렬로 들어간다).
+    final contentHeight = 3 * cardH + 2 * gap;
 
     final double leftMargin =
         ((size.x - contentWidth) / 2).clamp(0.0, size.x).toDouble();
     final double topMargin =
         ((size.y - contentHeight) / 2).clamp(0.0, size.y).toDouble();
 
-    final nobleY = topMargin;
+    final cardsX0 = leftMargin + nobleSize.x + gap;
+    final tokenColX = cardsX0 + cardsBlockWidth + gap;
     final tierRowY = {
-      3: topMargin + nobleSize.y + gap,
-      2: topMargin + nobleSize.y + gap + (cardH + gap),
-      1: topMargin + nobleSize.y + gap + 2 * (cardH + gap),
+      3: topMargin,
+      2: topMargin + (cardH + gap),
+      1: topMargin + 2 * (cardH + gap),
     };
 
     final newCards = <CardComponent>[];
@@ -131,7 +167,7 @@ class BoardComponent extends PositionComponent
       newDeckBacks.add(DeckBackComponent(
         sprite: backSprite,
         remaining: deckRemainingByTier[tier] ?? 0,
-        position: Vector2(leftMargin, y),
+        position: Vector2(cardsX0, y),
         size: Vector2(cardW, cardH),
       ));
 
@@ -149,14 +185,22 @@ class BoardComponent extends PositionComponent
           affordable: affordable,
           sprite: sprite,
           onTap: onCardTap,
-          position: Vector2(leftMargin + (cardW + gap) * (i + 1), y),
+          position: Vector2(cardsX0 + (cardW + gap) * (i + 1), y),
           size: Vector2(cardW, cardH),
           remainingCost: _remainingCostFor(card, me),
         ));
       }
     }
 
-    // 귀족 줄
+    // 귀족 열(왼쪽부터 귀족 열 -> 덱 뒷면 -> 미구매 카드 순으로, 세로). 최대
+    // 5개(4인전 기준 인원+1)까지 나오지만 세로로 쌓은 총 높이가 contentHeight
+    // (카드 3행 높이)를 넘지 않으므로(0.75*5 + gap*4 < 4.2+0.1) 그 안에서
+    // 가운데 정렬만 하면 된다.
+    final nobleCount = state.boardNobles.length;
+    final nobleColumnHeight =
+        nobleCount == 0 ? 0.0 : nobleCount * nobleSize.y + (nobleCount - 1) * gap;
+    final nobleStartY = topMargin +
+        ((contentHeight - nobleColumnHeight) / 2).clamp(0.0, contentHeight);
     final newNobles = <NobleComponent>[];
     for (var i = 0; i < state.boardNobles.length; i++) {
       final noble = state.boardNobles[i];
@@ -165,7 +209,7 @@ class BoardComponent extends PositionComponent
       newNobles.add(NobleComponent(
         noble: noble,
         sprite: sprite,
-        position: Vector2(leftMargin + (nobleSize.x + gap) * i, nobleY),
+        position: Vector2(leftMargin, nobleStartY + i * (nobleSize.y + gap)),
         size: nobleSize,
         selectable: nobleChoiceIds.contains(noble.id),
         remainingRequirement: _remainingRequirementFor(noble, me),
@@ -173,30 +217,36 @@ class BoardComponent extends PositionComponent
       ));
     }
 
-    // 토큰 풀(보드에 남은 보석 은행). 골드는 TakeTokens로 선택할 수 없는
-    // 와일드카드(예약 시에만 자동 지급)라서 탭으로 선택되지 않게 하고, 다른
-    // 5색과 헷갈리지 않도록 구획 간격만큼 떨어뜨려 그린다.
-    final tokenY = tierRowY[1]! + cardH + gap;
-    // 골드는 5색 토큰과 뚜렷이 구분되도록 카드 한 장 폭만큼 크게 띄워 그린다
-    // (토큰 줄은 카드 줄보다 훨씬 좁아 오른쪽에 여유가 충분하다).
-    final goldGap = cardW;
+    // 토큰 풀(보드에 남은 보석 은행, 미구매 카드 오른쪽에 세로 열). 골드는
+    // TakeTokens로 선택할 수 없는 와일드카드(예약 시에만 자동 지급)라서 탭으로
+    // 선택되지 않게 하고, 다른 5색과 헷갈리지 않도록 그 사이 간격을 두 배로
+    // 띄워 그린다. 6개(5색+골드) 세로 스택 높이가 contentHeight 안에 들어오도록
+    // tokenIconSize를 위에서 이미 작게(0.45) 잡아뒀다.
+    const goldExtraGap = 2; // onyx-gold 사이 간격 배수(그 외 색상 사이는 1배)
+    final tokenColumnHeight = Gem.values.length * tokenSize.y +
+        (Gem.values.length - 2) * gap +
+        goldExtraGap * gap;
+    final tokenStartY = topMargin +
+        ((contentHeight - tokenColumnHeight) / 2).clamp(0.0, contentHeight);
     final newGems = <GemTokenComponent>[];
+    var tokenY = tokenStartY;
     for (var i = 0; i < Gem.values.length; i++) {
       final gem = Gem.values[i];
       final isGold = gem == Gem.gold;
       final count = state.tokenBank[gem.wireValue] ?? 0;
       final sprite = await loadSprite(GameAssets.tokenImage(gem.wireValue));
       if (myGeneration != _generation) return;
-      final x = isGold
-          ? leftMargin + 5 * (tokenSize.x + gap) + goldGap
-          : leftMargin + (tokenSize.x + gap) * i;
+      final x = tokenColX;
+      final y = tokenY;
+      tokenY += tokenSize.y +
+          (i == Gem.values.length - 2 ? goldExtraGap * gap : gap);
       newGems.add(GemTokenComponent(
         gem: gem.wireValue,
         count: count,
         sprite: sprite,
         onTap: onGemTap,
         selectable: !isGold,
-        position: Vector2(x, tokenY),
+        position: Vector2(x, y),
         size: tokenSize,
       ));
     }

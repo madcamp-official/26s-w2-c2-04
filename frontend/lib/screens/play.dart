@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../game/assets.dart';
 import '../game/board_selection.dart';
+import '../game/components/board_component.dart';
 import '../game/gem_colors.dart';
 import '../game/logic/game_rules.dart';
 import '../game/splendor_game.dart';
@@ -249,12 +249,14 @@ class _PlayScreenState extends ConsumerState<PlayScreen> with RouteAware {
         GameConnected(
           :final gameState,
           :final pendingNobleChoice,
-          :final players
+          :final players,
+          :final turnTimeoutSeq
         ) =>
           _GameBoard(
             room: widget.room.copyWith(players: players),
             gameState: gameState,
             pendingNobleChoice: pendingNobleChoice,
+            turnTimeoutSeq: turnTimeoutSeq,
             game: _splendorGame,
             onPurchase: _purchase,
             onReserve: _reserve,
@@ -500,6 +502,9 @@ class _GameBoard extends StatefulWidget {
   final GameRoom room;
   final GameState gameState;
   final List<String>? pendingNobleChoice;
+  // 시간초과로 턴이 강제 종료될 때마다 늘어나는 카운터(game_controller.dart의
+  // GameConnected.turnTimeoutSeq). 값이 바뀔 때마다 중앙 토스트를 띄운다.
+  final int turnTimeoutSeq;
   final SplendorGame game;
   final Future<void> Function(SplendorCard card, {required bool reserved})
       onPurchase;
@@ -512,6 +517,7 @@ class _GameBoard extends StatefulWidget {
     required this.room,
     required this.gameState,
     required this.pendingNobleChoice,
+    required this.turnTimeoutSeq,
     required this.game,
     required this.onPurchase,
     required this.onReserve,
@@ -525,6 +531,9 @@ class _GameBoard extends StatefulWidget {
 }
 
 class _GameBoardState extends State<_GameBoard> {
+  bool _showTimeoutToast = false;
+  Timer? _timeoutToastTimer;
+
   @override
   void initState() {
     super.initState();
@@ -541,10 +550,22 @@ class _GameBoardState extends State<_GameBoard> {
         oldWidget.pendingNobleChoice != widget.pendingNobleChoice) {
       _pushStateToGame();
     }
+    if (oldWidget.turnTimeoutSeq != widget.turnTimeoutSeq) {
+      _flashTimeoutToast();
+    }
+  }
+
+  void _flashTimeoutToast() {
+    _timeoutToastTimer?.cancel();
+    setState(() => _showTimeoutToast = true);
+    _timeoutToastTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showTimeoutToast = false);
+    });
   }
 
   @override
   void dispose() {
+    _timeoutToastTimer?.cancel();
     widget.game.inspect.removeListener(_onInspect);
     super.dispose();
   }
@@ -631,14 +652,14 @@ class _GameBoardState extends State<_GameBoard> {
         // 뒤로가기/방 이름/턴 번호/현재 차례를 보여주던 상단 바는 완전히
         // 없앴다 — 현재 차례는 이미 좌석 오버레이(_PlayerSeatPanel.isCurrentTurn)
         // 강조 표시로 알 수 있다. 그만큼 늘어난 세로 공간은 곧바로 아래
-        // Expanded(_SquareTable)의 LayoutBuilder 제약으로 흘러들어가 게임보드
-        // (boardEdge)가 더 커지고, 카드/토큰/귀족 크기도 board_component.dart의
-        // 비례 공식(cardW = size.x*0.1575 등)을 그대로 따라 함께 커진다.
+        // Expanded(_TableLayout)의 LayoutBuilder 제약으로 흘러들어가 게임보드
+        // (boardWidth/boardHeight)가 더 커지고, 카드/토큰/귀족 크기도
+        // board_component.dart의 비례 공식(cardW 기준)을 그대로 따라 함께 커진다.
         Expanded(
           flex: 5,
           child: Stack(
             children: [
-              _SquareTable(
+              _TableLayout(
                 room: widget.room,
                 gameState: widget.gameState,
                 myUserId: widget.game.myUserId,
@@ -673,6 +694,19 @@ class _GameBoardState extends State<_GameBoard> {
                       ],
                     ),
                   ],
+                ),
+              ),
+              // 시간초과로 턴이 강제 종료됐을 때만 뜨는 중앙 안내 — 다른
+              // notice(입장/퇴장 등)처럼 SnackBar로 하단에 줄줄이 쌓이지 않고,
+              // 게임 화면 중앙에서 살짝 위쪽에 반투명 창으로 3초간 떴다 사라진다.
+              IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: _showTimeoutToast ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Align(
+                    alignment: Alignment(0, -0.25),
+                    child: _TurnTimeoutToast(),
+                  ),
                 ),
               ),
             ],
@@ -714,11 +748,27 @@ Color _gemPanelColor(String bonusWireValue) =>
 const double _seatPanelCrossAxis = 100;
 
 /// 구매/예약 카드 오버레이(_PlayerCardsRow)가 보드 가장자리 바로 바깥에서
-/// 차지하는 두께(보드 변에 수직인 방향). 5색 카드 스택(_GemCardStack, 최대 높이
-/// 56) 기준으로 여유를 조금 더했다. 좌석 패널에서 카드 줄이 빠지며 생긴 여유
-/// (예전 180 - 지금 100 = 80)보다 이 값을 작게 잡아, 그 차이(약 16)만큼은
-/// 게임보드가 실제로 더 커지도록 한다.
-const double _cardsOverlayThickness = 64;
+/// 차지하는 통로 두께(보드 변에 수직인 방향) = _overlayThicknessPerBoardWidth ×
+/// boardWidth + _overlayGap.
+///
+/// 카드 위젯 크기가 "게임보드 미구매 카드의 0.5배"로 고정됐으므로, 통로도 그
+/// 카드가 최대로 쌓였을 때(_GemCardStack이 허용하는 maxColumnH) 높이를 정확히
+/// 담도록 boardWidth에 비례해 확보한다 — 그래야 카드가 몇 장 쌓이든, 어떤 창
+/// 크기에서도 카드가 통로를 넘어 게임보드를 침범하지 않는다(통로 두께와 카드
+/// 크기 모두 boardWidth에 선형 비례하므로 이 비율은 창 크기와 무관하게 고정).
+///
+/// 상/하/좌/우 네 방향 모두 같은 두께다: 좌/우 오버레이는 90도 회전하지만 회전
+/// 뒤 통로 두께 방향으로 차지하는 크기 역시 회전 전의 세로 높이(=maxColumnH)라
+/// 상/하와 같기 때문이다. (아래 _overlayThicknessPerBoardWidth 유도는
+/// _GemCardStack의 maxColumnH 계산과 board_component.dart의 카드 크기 공식을
+/// 그대로 참조하므로, 그 상수들이 바뀌어도 자동으로 맞춰진다.)
+final double _overlayThicknessPerBoardWidth = 0.5 *
+    BoardComponent.cardSizeFor(1.0, 1.0 / BoardComponent.contentAspect).y *
+    _GemCardStack._maxColumnHRatio;
+
+/// 게임보드 변과 카드 오버레이 사이에 두는 최소 여백(px). 통로 두께에 더해
+/// 보드와 카드가 살짝 떨어져 보이게 한다.
+const double _overlayGap = 6;
 
 /// playersInOrder에서 내 자리를 항상 "하단"에 고정하고, 턴 진행 순서를 시계
 /// 방향(하단 → 우측 → 상단 → 좌측)으로 배정합니다. Splendor는 2~4인이라 남는
@@ -775,19 +825,20 @@ typedef CardTapCallback = void Function(
   required bool actionable,
 });
 
-/// 정사각 테이블에 4명이 둘러앉은 형태의 보드 레이아웃. 중앙에는 게임보드
+/// 직사각 테이블에 4명이 둘러앉은 형태의 보드 레이아웃. 중앙에는 게임보드
 /// (_GameBoardWithCardOverlays, Flame 귀족/카드/토큰 + 각 플레이어의 구매/예약
-/// 카드 오버레이)를 정사각형으로 배치하고, 상/하 좌석 패널(프로필/토큰/보너스)은
+/// 카드 오버레이)를 board_component.dart의 BoardComponent.contentAspect(가로로
+/// 넓은 직사각형) 비율에 맞춰 배치하고, 상/하 좌석 패널(프로필/토큰/보너스)은
 /// 그대로, 좌/우 좌석 패널은 [RotatedBox]로 90도 돌려 실제로 테이블에 둘러앉은
 /// 것처럼 보여줍니다.
-class _SquareTable extends StatelessWidget {
+class _TableLayout extends StatelessWidget {
   final GameRoom room;
   final GameState gameState;
   final int myUserId;
   final Widget board;
   final CardTapCallback onCardTap;
 
-  const _SquareTable({
+  const _TableLayout({
     required this.room,
     required this.gameState,
     required this.myUserId,
@@ -855,29 +906,42 @@ class _SquareTable extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 좌/우가 차지하는 폭(있을 때만) = 좌석 패널(_seatPanelCrossAxis) + 그
-        // 안쪽에 새로 생긴 카드 오버레이 통로(_cardsOverlayThickness). 상/하도
-        // 같은 두 값을 높이에 적용한다. 이 budget을 뺀 나머지 중 더 작은 쪽이
-        // 실제로 그려질 중앙 게임보드(정사각형) 한 변의 길이다.
-        final horizontalBudget = (seats.left != null
-                ? _seatPanelCrossAxis + _cardsOverlayThickness
-                : 0.0) +
-            (seats.right != null
-                ? _seatPanelCrossAxis + _cardsOverlayThickness
-                : 0.0);
-        final verticalBudget = (seats.top != null
-                ? _seatPanelCrossAxis + _cardsOverlayThickness
-                : 0.0) +
-            (seats.bottom != null
-                ? _seatPanelCrossAxis + _cardsOverlayThickness
-                : 0.0);
-        final boardEdge = math
-            .min(
-              constraints.maxWidth - horizontalBudget,
-              constraints.maxHeight - verticalBudget,
-            )
+        // 각 방향에서 좌석 패널(_seatPanelCrossAxis)과 카드 오버레이 통로를 뺀
+        // 나머지가 게임보드가 차지할 박스다. 통로 두께는 boardWidth에 비례
+        // (_overlayThicknessPerBoardWidth·boardWidth + _overlayGap)하고 boardWidth는
+        // 다시 그 통로를 뺀 값이라 서로 얽혀 있으므로 대수적으로 푼다. 이렇게
+        // 통로 두께를 카드 크기에 정확히 맞춰 확보해야, 카드가 통로를 넘어
+        // 게임보드를 침범(overlap)하는 일이 구조적으로 생기지 않는다.
+        //
+        // 게임보드는 BoardComponent.contentAspect(가로로 넓은 직사각형) 비율로
+        // 고정 — board_component.dart가 이 비율의 박스를 여백 없이 꽉 채운다.
+        final hOverlayCount =
+            (seats.left != null ? 1 : 0) + (seats.right != null ? 1 : 0);
+        final vOverlayCount =
+            (seats.top != null ? 1 : 0) + (seats.bottom != null ? 1 : 0);
+        final hSeatBudget = (seats.left != null ? _seatPanelCrossAxis : 0.0) +
+            (seats.right != null ? _seatPanelCrossAxis : 0.0);
+        final vSeatBudget = (seats.top != null ? _seatPanelCrossAxis : 0.0) +
+            (seats.bottom != null ? _seatPanelCrossAxis : 0.0);
+
+        final k = _overlayThicknessPerBoardWidth;
+        const aspect = BoardComponent.contentAspect;
+
+        // 가로 제약: maxWidth = hSeatBudget + hOverlayCount·(k·bW + gap) + bW
+        // 세로 제약: maxHeight = vSeatBudget + vOverlayCount·(k·bW + gap) + bW/aspect
+        // 각각 bW에 대해 풀어 더 빡빡한(작은) 쪽을 택한다.
+        final bwFromWidth =
+            (constraints.maxWidth - hSeatBudget - hOverlayCount * _overlayGap) /
+                (1 + hOverlayCount * k);
+        final bwFromHeight =
+            (constraints.maxHeight - vSeatBudget - vOverlayCount * _overlayGap) /
+                (1 / aspect + vOverlayCount * k);
+        final boardWidth = (bwFromWidth < bwFromHeight ? bwFromWidth : bwFromHeight)
             .clamp(0.0, double.infinity);
-        final centerSeatWidth = boardEdge * 0.92;
+        final boardHeight = boardWidth / aspect;
+        final overlayThickness = k * boardWidth + _overlayGap;
+
+        final centerSeatWidth = boardWidth * 0.92;
 
         return Column(
           children: [
@@ -890,7 +954,9 @@ class _SquareTable extends StatelessWidget {
                     child: Center(
                       child: _GameBoardWithCardOverlays(
                         board: board,
-                        boardEdge: boardEdge,
+                        boardWidth: boardWidth,
+                        boardHeight: boardHeight,
+                        overlayThickness: overlayThickness,
                         seats: seats,
                         myUserId: myUserId,
                         onCardTap: onCardTap,
@@ -1041,10 +1107,18 @@ class _PlayerCardsRow extends StatelessWidget {
   final bool isMe;
   final CardTapCallback onCardTap;
 
+  /// 구매/예약 카드 위젯 한 장의 크기 — 게임보드 안 미구매 카드 크기의 0.5배로
+  /// _GameBoardWithCardOverlays가 고정해서 넘긴다(구매 카드 스택과 예약 카드
+  /// 썸네일이 서로 다른 크기로 보이지 않도록 둘 다 이 값을 그대로 쓴다).
+  final double cardWidth;
+  final double cardHeight;
+
   const _PlayerCardsRow({
     required this.player,
     required this.isMe,
     required this.onCardTap,
+    required this.cardWidth,
+    required this.cardHeight,
   });
 
   @override
@@ -1058,6 +1132,10 @@ class _PlayerCardsRow extends StatelessWidget {
       cardsByGem.putIfAbsent(key, () => []).add(card);
     }
 
+    // 원래 카드 폭(26) 기준으로 튜닝된 여백/구분선 두께를 실제 cardWidth에
+    // 비례해서 맞춘다.
+    final gapFactor = cardWidth / 26.0;
+
     // mainAxisSize.min으로 내용 폭에 맞게 스스로 크기를 정해야, 이 위젯을 감싸는
     // Center(_GameBoardWithCardOverlays)가 보드 가장자리 중점을 지나는 선 위에
     // 정확히 중앙 정렬할 수 있다(Row가 부모 폭을 그대로 채워버리면 Center가
@@ -1068,29 +1146,34 @@ class _PlayerCardsRow extends StatelessWidget {
       children: [
         for (final gem in gemDisplayOrder)
           Padding(
-            padding: const EdgeInsets.only(right: 3),
+            padding: EdgeInsets.only(right: 3 * gapFactor),
             child: _GemCardStack(
               color: _gemPanelColor(gem),
               cards: cardsByGem[gem] ?? const [],
+              cardWidth: cardWidth,
+              cardHeight: cardHeight,
               onCardTap: (card) =>
                   onCardTap(card, reserved: false, actionable: false),
             ),
           ),
         // 예약 카드는 서버가 모든 참가자에게 실제 카드 정보를 그대로 보내므로
         // (참고 클라이언트도 reservedCardIds를 전원에게 보여준다) 각 플레이어의
-        // 구매 카드 오른쪽에 함께 그린다.
+        // 구매 카드 오른쪽에 함께 그린다. 구매 카드와 크기가 같아 보이도록
+        // 예약 카드 썸네일도 같은 cardWidth/cardHeight를 쓴다.
         if (player.reservedCards.isNotEmpty) ...[
           Container(
             width: 1,
-            height: 40,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
+            height: 40 * gapFactor,
+            margin: EdgeInsets.symmetric(horizontal: 4 * gapFactor),
             color: AppColors.goldHairline,
           ),
           for (final card in player.reservedCards)
             Padding(
-              padding: const EdgeInsets.only(right: 3),
+              padding: EdgeInsets.only(right: 3 * gapFactor),
               child: _ReservedCardThumb(
                 card: card,
+                width: cardWidth,
+                height: cardHeight,
                 onTap: () => onCardTap(card, reserved: true, actionable: isMe),
               ),
             ),
@@ -1100,103 +1183,130 @@ class _PlayerCardsRow extends StatelessWidget {
   }
 }
 
-/// 게임보드 위젯 — Flame 보드(귀족/미구매 카드/토큰 뱅크)를 정사각형 한가운데
-/// 두고, 자리가 찬 각 방향(top/bottom/left/right)마다 그 플레이어의 구매/예약
-/// 카드 오버레이(_PlayerCardsRow)를 보드와 가장 가까운 변 바로 바깥에 띄운다.
+/// 게임보드 위젯 — Flame 보드(귀족/미구매 카드/토큰 뱅크)를 직사각형(boardWidth x
+/// boardHeight) 한가운데 두고, 자리가 찬 각 방향(top/bottom/left/right)마다 그
+/// 플레이어의 구매/예약 카드 오버레이(_PlayerCardsRow)를 보드와 가장 가까운 변
+/// 바로 바깥에 띄운다.
 ///
-/// 각 오버레이는 그 변과 길이가 같은 통로 사각형(너비/높이 = boardEdge) 안에서
-/// [Center]로 배치되므로, 오버레이의 중심은 항상 "그 변의 중점을 지나는 수직선"
-/// 위에 오게 된다 — 좌/우는 좌석 패널과 같은 방향으로 [RotatedBox] 처리해 눕힌다.
-/// 이 위젯 자체가 카드 오버레이의 부모이며(더 이상 _PlayerSeatPanel의 자식이
-/// 아니다), 보드 사각형과 카드 오버레이 통로는 서로 겹치지 않는 별개의
-/// [Positioned] 영역을 차지한다.
+/// 네 방향 카드 오버레이 통로 두께는 [overlayThickness] 하나로 통일한다 —
+/// _TableLayout이 "게임보드 미구매 카드의 0.5배" 크기 카드가 최대로 쌓였을 때
+/// 높이(maxColumnH)를 정확히 담도록 boardWidth에 비례해 계산해 넘기므로, 카드가
+/// 이 통로를 넘어 게임보드를 침범(overlap)하는 일이 없다. 카드 위젯 자체 크기도
+/// 같은 0.5배 규칙(BoardComponent.cardSizeFor(boardWidth, boardHeight)/2)이라
+/// 네 플레이어 모두 같은 크기로 보인다(회전 각도만 다르다).
+///
+/// 각 오버레이는 그 변과 길이가 같은 통로 사각형 안에서 [Center]로 배치되므로,
+/// 오버레이의 중심은 항상 "그 변의 중점을 지나는 수직선" 위에 오게 된다 —
+/// 좌/우는 좌석 패널과 같은 방향으로 [RotatedBox] 처리해 눕히고, 상단(반대편
+/// 플레이어)은 180도 돌려 그 플레이어 시점으로 바로 보이게 한다. 이 위젯 자체가
+/// 카드 오버레이의 부모이며(더 이상 _PlayerSeatPanel의 자식이 아니다), 보드
+/// 사각형과 카드 오버레이 통로는 서로 겹치지 않는 별개의 [Positioned] 영역을
+/// 차지한다.
 class _GameBoardWithCardOverlays extends StatelessWidget {
   final Widget board;
-  final double boardEdge;
+  final double boardWidth;
+  final double boardHeight;
+  final double overlayThickness;
   final _TableSeats seats;
   final int myUserId;
   final CardTapCallback onCardTap;
 
   const _GameBoardWithCardOverlays({
     required this.board,
-    required this.boardEdge,
+    required this.boardWidth,
+    required this.boardHeight,
+    required this.overlayThickness,
     required this.seats,
     required this.myUserId,
     required this.onCardTap,
   });
 
-  /// 통로 폭보다 카드 줄이 넓어지는 극단적인 경우(카드가 아주 많이 쌓인 경우
-  /// 등)에도 옆 통로(다른 플레이어의 오버레이나 보드)를 침범해 겹치지 않도록
-  /// ClipRect로 통로 경계에서 잘라낸다.
-  Widget _cardsOverlay(GamePlayerState? player) {
+  /// 통로 "길이" 방향(변을 따라가는 방향)으로 카드 줄이 넘칠 수 있는 극단적인
+  /// 경우(예약 카드까지 많이 쌓인 경우 등)에 대비해 ClipRect로 감싼다 — 통로
+  /// "두께" 방향은 _TableLayout이 카드 크기에 맞춰 확보하므로 넘치지 않는다.
+  Widget _cardsOverlay(GamePlayerState? player, Vector2 cardSize) {
     if (player == null) return const SizedBox.shrink();
     return ClipRect(
       child: _PlayerCardsRow(
         player: player,
         isMe: player.userId == myUserId,
         onCardTap: onCardTap,
+        cardWidth: cardSize.x,
+        cardHeight: cardSize.y,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final leftExtent = seats.left != null ? _cardsOverlayThickness : 0.0;
-    final rightExtent = seats.right != null ? _cardsOverlayThickness : 0.0;
-    final topExtent = seats.top != null ? _cardsOverlayThickness : 0.0;
-    final bottomExtent = seats.bottom != null ? _cardsOverlayThickness : 0.0;
+    final leftExtent = seats.left != null ? overlayThickness : 0.0;
+    final rightExtent = seats.right != null ? overlayThickness : 0.0;
+    final topExtent = seats.top != null ? overlayThickness : 0.0;
+    final bottomExtent = seats.bottom != null ? overlayThickness : 0.0;
+    // 게임보드 안 미구매 카드 크기의 0.5배로 고정(_TableLayout의 통로 두께
+    // 계산과 같은 규칙). 이 크기의 카드가 최대로 쌓여도 overlayThickness 안에
+    // 들어오도록 통로가 확보돼 있어 게임보드와 겹치지 않는다.
+    final boardCardSize = BoardComponent.cardSizeFor(boardWidth, boardHeight);
+    final cardSize = boardCardSize / 2;
 
     return SizedBox(
-      width: leftExtent + boardEdge + rightExtent,
-      height: topExtent + boardEdge + bottomExtent,
+      width: leftExtent + boardWidth + rightExtent,
+      height: topExtent + boardHeight + bottomExtent,
       child: Stack(
         children: [
           Positioned(
             left: leftExtent,
             top: topExtent,
-            width: boardEdge,
-            height: boardEdge,
+            width: boardWidth,
+            height: boardHeight,
             child: board,
           ),
           if (seats.top != null)
             Positioned(
               left: leftExtent,
               top: 0,
-              width: boardEdge,
+              width: boardWidth,
               height: topExtent,
-              child: Center(child: _cardsOverlay(seats.top)),
+              // 반대편(내 정면) 플레이어의 카드 위젯은 그 플레이어 시점으로
+              // 바로 보이도록 180도 뒤집는다.
+              child: Center(
+                child: RotatedBox(
+                  quarterTurns: 2,
+                  child: _cardsOverlay(seats.top, cardSize),
+                ),
+              ),
             ),
           if (seats.bottom != null)
             Positioned(
               left: leftExtent,
-              top: topExtent + boardEdge,
-              width: boardEdge,
+              top: topExtent + boardHeight,
+              width: boardWidth,
               height: bottomExtent,
-              child: Center(child: _cardsOverlay(seats.bottom)),
+              child: Center(child: _cardsOverlay(seats.bottom, cardSize)),
             ),
           if (seats.left != null)
             Positioned(
               left: 0,
               top: topExtent,
               width: leftExtent,
-              height: boardEdge,
+              height: boardHeight,
               child: Center(
                 child: RotatedBox(
                   quarterTurns: 1,
-                  child: _cardsOverlay(seats.left),
+                  child: _cardsOverlay(seats.left, cardSize),
                 ),
               ),
             ),
           if (seats.right != null)
             Positioned(
-              left: leftExtent + boardEdge,
+              left: leftExtent + boardWidth,
               top: topExtent,
               width: rightExtent,
-              height: boardEdge,
+              height: boardHeight,
               child: Center(
                 child: RotatedBox(
                   quarterTurns: 3,
-                  child: _cardsOverlay(seats.right),
+                  child: _cardsOverlay(seats.right, cardSize),
                 ),
               ),
             ),
@@ -1281,10 +1391,16 @@ class _TokenChip extends StatelessWidget {
 class _ReservedCardThumb extends StatelessWidget {
   final SplendorCard card;
   final VoidCallback? onTap;
-  const _ReservedCardThumb({required this.card, this.onTap});
-
-  static const _w = 18.0;
-  static const _h = 25.0;
+  // 구매 카드(_GemCardStack)와 같은 크기로 보이도록, 호출부가 게임보드 미구매
+  // 카드 크기의 0.5배를 그대로 넘긴다.
+  final double width;
+  final double height;
+  const _ReservedCardThumb({
+    required this.card,
+    required this.width,
+    required this.height,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1292,8 +1408,8 @@ class _ReservedCardThumb extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: _w,
-        height: _h,
+        width: width,
+        height: height,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(3),
           color: AppColors.panelAlt,
@@ -1312,25 +1428,39 @@ class _ReservedCardThumb extends StatelessWidget {
 
 /// 한 보석 색상으로 구매한 카드들을 세로로 겹쳐서(overlap) 보여줍니다. 카드가
 /// 없으면 빈 칸 테두리를, 여러 장이면 많이 모을수록 더 촘촘히 겹쳐 정해진
-/// 세로 폭([_maxColumnH]) 안에 들어오게 합니다 — 실물 카드를 쌓아두는 느낌.
+/// 세로 폭(maxColumnH) 안에 들어오게 합니다 — 실물 카드를 쌓아두는 느낌.
 class _GemCardStack extends StatelessWidget {
   final Color color;
   final List<SplendorCard> cards;
   final void Function(SplendorCard card)? onCardTap;
+  // 카드 한 장의 크기 — _ReservedCardThumb와 같은 값을 받아 구매/예약 카드가
+  // 항상 같은 크기로 보이게 한다(게임보드 미구매 카드 크기의 0.5배).
+  final double cardWidth;
+  final double cardHeight;
 
-  static const _cardW = 26.0;
-  static const _cardH = 36.0;
-  static const _maxColumnH = 56.0;
+  /// 여러 장 겹쳤을 때 스택이 넘지 않을 최대 세로 폭. 원래 카드 크기(36) 대비
+  /// 56의 비율을 그대로 유지해, 카드가 커지거나 작아져도 겹침 정도가 똑같아
+  /// 보이게 한다.
+  static const _maxColumnHRatio = 56.0 / 36.0;
 
-  const _GemCardStack(
-      {required this.color, required this.cards, this.onCardTap});
+  const _GemCardStack({
+    required this.color,
+    required this.cards,
+    required this.cardWidth,
+    required this.cardHeight,
+    this.onCardTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final cardW = cardWidth;
+    final cardH = cardHeight;
+    final maxColumnH = cardHeight * _maxColumnHRatio;
+
     if (cards.isEmpty) {
       return Container(
-        width: _cardW,
-        height: _cardH,
+        width: cardW,
+        height: cardH,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(4),
           border: Border.all(color: AppColors.goldHairline, width: 1),
@@ -1339,16 +1469,17 @@ class _GemCardStack extends StatelessWidget {
     }
 
     // 하한을 4.0으로 두면 카드가 7장 이상 쌓였을 때 겹침 간격이 그 아래로
-    // 내려가야 총 높이가 _maxColumnH 안에 들어오는데도 강제로 4.0을 유지해서
-    // 실제 높이가 _maxColumnH를 넘어버렸다(좌석 패널 Column이 bottom overflow).
-    // 하한을 0.0으로 낮춰 카드 수와 무관하게 항상 _maxColumnH 이하로 맞춘다.
+    // 내려가야 총 높이가 maxColumnH 안에 들어오는데도 강제로 4.0을 유지해서
+    // 실제 높이가 maxColumnH를 넘어버렸다(좌석 패널 Column이 bottom overflow).
+    // 하한을 0.0으로 낮춰 카드 수와 무관하게 항상 maxColumnH 이하로 맞춘다.
     final overlap = cards.length == 1
         ? 0.0
-        : ((_maxColumnH - _cardH) / (cards.length - 1)).clamp(0.0, 14.0);
-    final height = _cardH + overlap * (cards.length - 1);
+        : ((maxColumnH - cardH) / (cards.length - 1))
+            .clamp(0.0, 14.0 * cardHeight / 36.0);
+    final height = cardH + overlap * (cards.length - 1);
 
     return SizedBox(
-      width: _cardW,
+      width: cardW,
       height: height,
       child: Stack(
         children: [
@@ -1357,7 +1488,12 @@ class _GemCardStack extends StatelessWidget {
               top: overlap * i,
               child: GestureDetector(
                 onTap: onCardTap == null ? null : () => onCardTap!(cards[i]),
-                child: _CardThumb(card: cards[i], color: color),
+                child: _CardThumb(
+                  card: cards[i],
+                  color: color,
+                  width: cardW,
+                  height: cardH,
+                ),
               ),
             ),
         ],
@@ -1369,14 +1505,21 @@ class _GemCardStack extends StatelessWidget {
 class _CardThumb extends StatelessWidget {
   final SplendorCard card;
   final Color color;
-  const _CardThumb({required this.card, required this.color});
+  final double width;
+  final double height;
+  const _CardThumb({
+    required this.card,
+    required this.color,
+    required this.width,
+    required this.height,
+  });
 
   @override
   Widget build(BuildContext context) {
     final imagePath = GameAssets.cardFace(card.id);
     return Container(
-      width: _GemCardStack._cardW,
-      height: _GemCardStack._cardH,
+      width: width,
+      height: height,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(4),
         color: color.withValues(alpha: 0.85),
@@ -1389,6 +1532,34 @@ class _CardThumb extends StatelessWidget {
         boxShadow: const [
           BoxShadow(color: Colors.black54, blurRadius: 3, offset: Offset(0, 1)),
         ],
+      ),
+    );
+  }
+}
+
+/// 시간초과로 턴이 강제 종료됐을 때 게임 화면 중앙에서 살짝 위쪽에 3초간 떴다
+/// 사라지는 반투명 안내 창(_GameBoardState._flashTimeoutToast가 표시/애니메이션을
+/// 담당하고, 이 위젯은 순수하게 모양만 그린다).
+class _TurnTimeoutToast extends StatelessWidget {
+  const _TurnTimeoutToast();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.goldHairline),
+      ),
+      child: const Text(
+        '시간 초과로 턴이 넘어갔습니다.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: AppColors.textHeading,
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -1478,14 +1649,25 @@ class _ActionBar extends StatelessWidget {
     required this.onCancel,
   });
 
+  // 안내 문구(토큰 미선택)와 확정/취소 버튼 줄(토큰 선택 중)은 세로 크기가 서로
+  // 다르다(버튼은 ElevatedButtonTheme의 vertical:16 패딩 때문에 텍스트 한 줄보다
+  // 훨씬 높다). 이 바가 Column 안에서 남은 세로 공간을 Expanded(_TableLayout)와
+  // 나눠 쓰는 구조라, 두 상태의 높이가 다르면 토큰을 탭해 버튼이 나타나는 순간
+  // 이 바의 높이가 바뀌어 위쪽 게임보드 전체가 미세하게 리사이즈된다(카드/토큰/
+  // 귀족/좌석 오버레이가 순간 작아지거나 밀리는 것처럼 보임). 두 상태 모두 같은
+  // 고정 높이 안에서 가운데 정렬해 이 흔들림을 없앤다.
+  static const double _height = 64;
+
   @override
   Widget build(BuildContext context) {
     if (selection.gems.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 10),
-        child: Text(
-          '토큰을 탭해서 가져오거나, 카드를 탭해서 구매/예약하세요.',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+      return const SizedBox(
+        height: _height,
+        child: Center(
+          child: Text(
+            '토큰을 탭해서 가져오거나, 카드를 탭해서 구매/예약하세요.',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
         ),
       );
     }
@@ -1494,19 +1676,22 @@ class _ActionBar extends StatelessWidget {
     final selectedTokenCount =
         selection.gems.values.fold<int>(0, (sum, v) => sum + v);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: ElevatedButton(
-              onPressed: canConfirm ? onConfirm : null,
-              child: Text('토큰 획득 ($selectedTokenCount/3)'),
+    return SizedBox(
+      height: _height,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: ElevatedButton(
+                onPressed: canConfirm ? onConfirm : null,
+                child: Text('토큰 획득 ($selectedTokenCount/3)'),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          TextButton(onPressed: onCancel, child: const Text('취소')),
-        ],
+            const SizedBox(width: 8),
+            TextButton(onPressed: onCancel, child: const Text('취소')),
+          ],
+        ),
       ),
     );
   }

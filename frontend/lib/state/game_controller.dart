@@ -47,6 +47,11 @@ class GameConnected extends GameControllerState {
   final List<String>? pendingNobleChoice; // NobleChoiceRequired 대기 중인 후보 귀족
   final GameHubGameOver? gameOver;
   final String? notice; // 입장/퇴장/최종 라운드 등 일회성 알림 표시용
+  // 시간초과로 턴이 강제 종료될 때마다 1씩 늘어나는 카운터. 이 알림만 SnackBar가
+  // 아니라 게임 화면 중앙의 반투명 토스트(play.dart의 _TurnTimeoutToast)로 따로
+  // 보여줘야 해서, 매번 값이 달라지는 이 카운터를 트리거로 쓴다(문구가 항상
+  // 같아서 notice처럼 문자열 비교로는 "새로 발생했다"를 구분할 수 없다).
+  final int turnTimeoutSeq;
 
   const GameConnected({
     required this.gameState,
@@ -55,6 +60,7 @@ class GameConnected extends GameControllerState {
     this.pendingNobleChoice,
     this.gameOver,
     this.notice,
+    this.turnTimeoutSeq = 0,
   });
 
   GameConnected copyWith({
@@ -65,6 +71,7 @@ class GameConnected extends GameControllerState {
     bool clearPendingNobleChoice = false,
     GameHubGameOver? gameOver,
     String? notice,
+    int? turnTimeoutSeq,
   }) {
     return GameConnected(
       gameState: gameState ?? this.gameState,
@@ -75,6 +82,7 @@ class GameConnected extends GameControllerState {
           : (pendingNobleChoice ?? this.pendingNobleChoice),
       gameOver: gameOver ?? this.gameOver,
       notice: notice ?? this.notice,
+      turnTimeoutSeq: turnTimeoutSeq ?? this.turnTimeoutSeq,
     );
   }
 }
@@ -286,24 +294,25 @@ class GameController extends StateNotifier<GameControllerState> {
 
   /// TurnChanged(reason: "timeout")는 서버가 제한시간 초과로 대신 턴을 넘긴
   /// 경우다. 노블 선택 대기 중이었다면 서버가 이미 포기 처리했으므로
-  /// pendingNobleChoice UI도 같이 닫아야 하고("[8]"), 누구 턴이 시간초과됐는지
-  /// 안내 메시지를 띄운다.
+  /// pendingNobleChoice UI도 같이 닫아야 한다("[8]").
+  ///
+  /// 시간초과로 "누구"의 턴이 끝났는지는 서버 TurnChanged 페이로드에 담겨 오지
+  /// 않고(currentPlayerId는 이미 "다음" 플레이어다), 서버는 이 이벤트보다 먼저
+  /// StateSync로 새 currentPlayerId를 브로드캐스트한다 — 그래서 이 핸들러가
+  /// 실행되는 시점엔 로컬 state.gameState.currentPlayerId도 이미 새 플레이어로
+  /// 덮어써져 있어, 프론트만으로는 "직전 플레이어"를 항상 정확히 복구할 수 없다
+  /// (경쟁 상태). 잘못된 이름을 보여주느니 플레이어를 특정하지 않는 일반 문구로
+  /// 안내하고, 다른 notice(입장/퇴장 등)와 달리 게임 화면 중앙의 토스트로 보여줄
+  /// 수 있도록 turnTimeoutSeq를 올린다(play.dart의 _TurnTimeoutToast 참고).
   void _handleTurnChanged(int currentPlayerId, int turnNumber, String? reason) {
-    final current = state;
-    final previousPlayerId =
-        current is GameConnected ? current.gameState.currentPlayerId : null;
-
     _mutateGameState(
       (gs) => gs.copyWith(currentPlayerId: currentPlayerId, turnNumber: turnNumber),
     );
 
     if (reason == 'timeout') {
-      final nickname = current is GameConnected && previousPlayerId != null
-          ? _nicknameOf(current.players, previousPlayerId)
-          : null;
       _updateConnected(
         (c) => c.copyWith(
-          notice: '${nickname ?? "상대방"} 님이 시간 초과로 턴을 넘겼습니다.',
+          turnTimeoutSeq: c.turnTimeoutSeq + 1,
           clearPendingNobleChoice: true,
         ),
       );
