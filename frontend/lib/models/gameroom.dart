@@ -20,8 +20,8 @@ class GameRoom with _$GameRoom {
   const GameRoom._();
 
   const factory GameRoom({
-    required String roomId,
-    required String hostId, // 방장 판별용, player.id와 비교해서 사용
+    required int roomId,
+    required int hostId, // 방장 판별용, player.id와 비교해서 사용
     required List<Player> players,
     required DateTime createdAt,
     @Default(4) int maxPlayers, // 스플렌더는 2~4인

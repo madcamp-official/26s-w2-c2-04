@@ -98,11 +98,11 @@ class LobbyController extends StateNotifier<LobbyState> {
     return room;
   }
 
-  Future<GameRoom> joinRoom(String roomId, {String? password}) {
+  Future<GameRoom> joinRoom(int roomId, {String? password}) {
     return _roomService.joinRoom(roomId, password: password);
   }
 
-  Future<void> leaveRoom(String roomId) {
+  Future<void> leaveRoom(int roomId) {
     return _roomService.leaveRoom(roomId);
   }
 }

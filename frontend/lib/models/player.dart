@@ -10,7 +10,7 @@ part 'player.g.dart';
 @freezed
 class Player with _$Player {
   const factory Player({
-    @JsonKey(name: 'userId') required String id, // 서버 응답 필드명은 userId
+    @JsonKey(name: 'userId') required int id, // 서버 응답 필드명은 userId
     required String nickname,
     String? avatarUrl, // 방/게임 목록 응답 등 일부 API는 avatarUrl을 내려주지 않음
     String? status, // online | offline | in_game | away, 친구 목록 등에서만 내려옴

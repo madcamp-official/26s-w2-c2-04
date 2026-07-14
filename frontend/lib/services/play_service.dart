@@ -14,13 +14,13 @@ class PlayService {
 
   PlayService({ApiClient? client}) : _client = client ?? ApiClient();
 
-  Future<GameState> getGameState(String gameId) async {
+  Future<GameState> getGameState(int gameId) async {
     final res = await _client.get('/games/$gameId/state');
     ApiClient.ensureOk(res, '게임 상태를 불러오지 못했습니다.');
     return GameState.fromJson(jsonDecode(res.body));
   }
 
-  Future<ReplayResponse> getReplay(String gameId) async {
+  Future<ReplayResponse> getReplay(int gameId) async {
     final res = await _client.get('/replay/$gameId');
     ApiClient.ensureOk(res, '리플레이를 불러오지 못했습니다.');
     return ReplayResponse.fromJson(jsonDecode(res.body));

@@ -11,7 +11,7 @@ part 'replay.g.dart';
 class ReplayAction with _$ReplayAction {
   const factory ReplayAction({
     required int turnNumber,
-    required String playerId,
+    required int playerId,
     required String actionType, // 예: TAKE_TOKENS, PURCHASE_CARD, RESERVE_CARD ...
     @Default({}) Map<String, dynamic> actionPayload,
   }) = _ReplayAction;

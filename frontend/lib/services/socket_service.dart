@@ -17,8 +17,14 @@ abstract class GameSocket {
   Stream<GameHubEvent> get events;
   HubConnectionState? get connectionState;
 
-  Future<void> connect({required String roomId, required String accessToken});
-  Future<void> leaveRoom(String roomId);
+  Future<void> connect({required int roomId, required String accessToken});
+  Future<void> leaveRoom(int roomId);
+
+  /// 방을 나갈 때(LeaveRoom invoke 이후) 이 소켓 인스턴스를 재사용 가능한 상태로
+  /// 되돌리며 연결을 끊습니다. [dispose]와 달리 이벤트 스트림을 닫지 않으므로,
+  /// 같은 GameController/SocketService 인스턴스로 이후 다른 방에 다시 [connect]할
+  /// 수 있습니다.
+  Future<void> disconnect();
   Future<void> takeTokens(List<String> gems);
   Future<void> purchaseCard({required String cardId, required String source});
   Future<void> reserveCard({String? cardId, int? tier});
@@ -34,6 +40,10 @@ class SocketService implements GameSocket {
   HubConnection? _hubConnection;
   final _eventController = StreamController<GameHubEvent>.broadcast();
 
+  // GameHub의 모든 Hub 메서드(TakeTokens 등)는 roomId를 첫 인자로 받으므로,
+  // connect() 시점에 저장해두고 이후 모든 invoke에 실어 보냅니다.
+  int? _roomId;
+
   @override
   Stream<GameHubEvent> get events => _eventController.stream;
 
@@ -42,9 +52,18 @@ class SocketService implements GameSocket {
 
   @override
   Future<void> connect({
-    required String roomId,
+    required int roomId,
     required String accessToken,
   }) async {
+    // 같은 SocketService 인스턴스에 connect()가 두 번 이상 걸리는 경우(예: 대기실
+    // 화면을 재진입하며 GameController.connect()가 다시 호출됨)를 대비해, 새 연결을
+    // 만들기 전에 이전 연결부터 정리한다. 그렇지 않으면 이전 연결이 살아있는 채로
+    // 두 번째 연결이 열려 같은 방에 커넥션이 중복되고, 그중 하나가 나중에 뒤늦게
+    // 끊기면서(Hub의 OnDisconnectedAsync) 실제로는 계속 접속 중인데도 다른
+    // 참가자들에게 잘못된 PlayerLeft가 브로드캐스트되는 문제로 이어진다.
+    await _hubConnection?.stop();
+
+    _roomId = roomId;
     final connection = HubConnectionBuilder()
         .withUrl(
           '${ApiConfig.baseUrl}/hubs/game',
@@ -89,19 +108,30 @@ class SocketService implements GameSocket {
   }
 
   @override
-  Future<void> leaveRoom(String roomId) async {
+  Future<void> leaveRoom(int roomId) async {
+    // 연결이 아직 "Connected" 상태가 아니면(예: connect()가 막 시작돼 JoinRoom
+    // 응답을 기다리는 중) invoke()가 예외를 던져 이 함수 호출부 전체(REST 퇴장 +
+    // 배지 해제 + 화면 pop)를 막아버릴 수 있다. 그런 경우엔 다른 참가자에게 알릴
+    // 살아있는 연결이 애초에 없는 셈이므로 조용히 건너뛴다 — 서버 쪽은 이 연결이
+    // 결국 끊길 때 OnDisconnectedAsync로 정리된다.
+    if (_hubConnection?.state != HubConnectionState.Connected) return;
     await _hubConnection?.invoke('LeaveRoom', args: [roomId]);
   }
 
-  Future<void> startGame(String roomId) async {
+  @override
+  Future<void> disconnect() async {
+    await _hubConnection?.stop();
+    _hubConnection = null;
+  }
+
+  Future<void> startGame(int roomId) async {
     await _hubConnection?.invoke('StartGame', args: [roomId]);
   }
 
   @override
   Future<void> takeTokens(List<String> gems) async {
-    await _hubConnection?.invoke('TakeTokens', args: [
-      {'gems': gems},
-    ]);
+    // 백엔드 GameHub.TakeTokens(int roomId, List<string> gems) 시그니처와 위치 인자를 맞춘다.
+    await _hubConnection?.invoke('TakeTokens', args: [_roomId!, gems]);
   }
 
   @override
@@ -109,9 +139,9 @@ class SocketService implements GameSocket {
     required String cardId,
     required String source,
   }) async {
-    await _hubConnection?.invoke('PurchaseCard', args: [
-      {'cardId': cardId, 'source': source},
-    ]);
+    // 백엔드 GameHub.PurchaseCard(int roomId, string cardId, string source)
+    await _hubConnection
+        ?.invoke('PurchaseCard', args: [_roomId!, cardId, source]);
   }
 
   @override
@@ -120,45 +150,48 @@ class SocketService implements GameSocket {
       (cardId == null) != (tier == null),
       'cardId와 tier 중 하나만 지정해야 합니다.',
     );
+    // 백엔드 GameHub.ReserveCard(int roomId, ReserveCardRequest request)
+    // (cardId/tier 중 하나가 null이라 List<Object> 위치 인자로 못 보내고 객체로 감싼다)
     await _hubConnection?.invoke('ReserveCard', args: [
-      if (cardId != null) {'cardId': cardId} else {'tier': tier},
+      _roomId!,
+      {'cardId': cardId, 'tier': tier},
     ]);
   }
 
   @override
   Future<void> discardTokens(List<String> gems) async {
-    await _hubConnection?.invoke('DiscardTokens', args: [
-      {'gems': gems},
-    ]);
+    // 백엔드 GameHub.DiscardTokens(int roomId, List<string> gems)
+    await _hubConnection?.invoke('DiscardTokens', args: [_roomId!, gems]);
   }
 
   @override
   Future<void> claimNoble(String nobleId) async {
-    await _hubConnection?.invoke('ClaimNoble', args: [nobleId]);
+    // 백엔드 GameHub.ClaimNoble(int roomId, string nobleId)
+    await _hubConnection?.invoke('ClaimNoble', args: [_roomId!, nobleId]);
   }
 
   @override
   Future<void> sendChatMessage(String text) async {
-    await _hubConnection?.invoke('SendChatMessage', args: [
-      {'text': text},
-    ]);
+    // 백엔드 GameHub.SendChatMessage(int roomId, string text)
+    await _hubConnection?.invoke('SendChatMessage', args: [_roomId!, text]);
   }
 
   @override
   Future<void> sendEmote(String emoteId) async {
-    await _hubConnection?.invoke('SendEmote', args: [
-      {'emoteId': emoteId},
-    ]);
+    // 백엔드 GameHub.SendEmote(int roomId, string emoteId)
+    await _hubConnection?.invoke('SendEmote', args: [_roomId!, emoteId]);
   }
 
   @override
   Future<void> requestResync(int lastSequence) async {
-    await _hubConnection?.invoke('RequestResync', args: [lastSequence]);
+    // 백엔드 GameHub.RequestResync(int roomId, int lastSequence)
+    await _hubConnection
+        ?.invoke('RequestResync', args: [_roomId!, lastSequence]);
   }
 
   @override
   Future<void> dispose() async {
-    await _hubConnection?.stop();
+    await disconnect();
     await _eventController.close();
   }
 }

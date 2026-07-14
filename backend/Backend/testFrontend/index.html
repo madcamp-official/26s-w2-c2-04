@@ -190,6 +190,15 @@
 </section>
 
 <section>
+  <h2>현재 방 멤버 <span id="roomMembersStatus" class="hub-status">참가한 방 없음</span></h2>
+  <div style="font-size:12px;color:#666;margin-bottom:8px">
+    참가/생성 시 REST 응답으로 최초 멤버 목록을 채운 뒤에는, REST를 다시 호출하지 않고
+    GameHub의 PlayerJoined/PlayerLeft 이벤트만으로 아래 목록이 갱신됩니다.
+  </div>
+  <div id="roomMembersList"></div>
+</section>
+
+<section>
   <h2>랭킹전 매칭</h2>
   <div class="row">
     <label>인원수
@@ -403,6 +412,7 @@ document.getElementById('createRoomForm').addEventListener('submit', async (e) =
     const id = result.body.roomId;
     document.getElementById('selectedRoomId').value = id;
     document.getElementById('gameRoomId').value = id;
+    seedRoomMembers(result.body);
     try {
       await connectHub();
       await invokeHub('JoinRoom', id);
@@ -438,6 +448,62 @@ async function refreshRooms() {
 
 document.getElementById('btnRefreshRooms').addEventListener('click', refreshRooms);
 
+// ── 현재 방 멤버 패널 ──────────────────────────────────────────────
+// 참가/생성 시 REST 응답(플레이어 목록 포함)으로 최초 1회 상태를 채운 뒤에는,
+// GameHub의 PlayerJoined/PlayerLeft 이벤트만으로 갱신한다(REST 재조회 없음).
+let currentRoomMembers = null;
+
+function seedRoomMembers(room) {
+  currentRoomMembers = {
+    roomId: room.roomId,
+    maxPlayers: room.maxPlayers,
+    hostId: room.hostId,
+    members: new Map(room.players.map((p) => [p.userId, p])),
+  };
+  renderRoomMembers();
+}
+
+function clearRoomMembers() {
+  currentRoomMembers = null;
+  renderRoomMembers();
+}
+
+function addRoomMember(userId, nickname) {
+  if (!currentRoomMembers || currentRoomMembers.members.has(userId)) return;
+  currentRoomMembers.members.set(userId, {
+    userId,
+    nickname: nickname || `User ${userId}`,
+    isHost: userId === currentRoomMembers.hostId,
+  });
+  renderRoomMembers();
+}
+
+function removeRoomMember(userId) {
+  if (!currentRoomMembers) return;
+  currentRoomMembers.members.delete(userId);
+  renderRoomMembers();
+}
+
+function renderRoomMembers() {
+  const status = document.getElementById('roomMembersStatus');
+  const list = document.getElementById('roomMembersList');
+  if (!currentRoomMembers) {
+    status.textContent = '참가한 방 없음';
+    status.classList.remove('connected');
+    list.innerHTML = '';
+    return;
+  }
+  status.textContent = `Room ${currentRoomMembers.roomId} — ${currentRoomMembers.members.size}/${currentRoomMembers.maxPlayers}명`;
+  status.classList.add('connected');
+  list.innerHTML = '';
+  for (const m of currentRoomMembers.members.values()) {
+    const div = document.createElement('div');
+    div.className = 'player-card';
+    div.textContent = `${m.isHost ? '👑 ' : ''}${m.nickname} (userId=${m.userId})`;
+    list.appendChild(div);
+  }
+}
+
 function currentRoomId() {
   const value = document.getElementById('selectedRoomId').value;
   return value ? Number(value) : null;
@@ -459,6 +525,7 @@ document.getElementById('btnJoinRoom').addEventListener('click', async () => {
 
   if (result.status === 200) {
     document.getElementById('gameRoomId').value = id;
+    seedRoomMembers(result.body);
     try {
       await connectHub();
       await invokeHub('JoinRoom', id);
@@ -474,6 +541,17 @@ document.getElementById('btnLeaveRoom').addEventListener('click', async () => {
   const result = await api(`/rooms/${id}/leave`, 'POST');
   log(`POST /rooms/${id}/leave`, result);
   refreshRooms();
+
+  if (result.status === 204) {
+    if (currentRoomMembers?.roomId === id) clearRoomMembers();
+    if (hubConnection) {
+      try {
+        await invokeHub('LeaveRoom', id);
+      } catch (err) {
+        logGameEvent('hub LeaveRoom 실패', { message: String(err) });
+      }
+    }
+  }
 });
 
 document.getElementById('btnStartRoom').addEventListener('click', async () => {
@@ -502,6 +580,7 @@ document.getElementById('btnDeleteRoom').addEventListener('click', async () => {
   const result = await api(`/rooms/${id}`, 'DELETE');
   log(`DELETE /rooms/${id}`, result);
   refreshRooms();
+  if (result.status === 204 && currentRoomMembers?.roomId === id) clearRoomMembers();
 });
 
 renderStatus();
@@ -539,19 +618,25 @@ async function connectHub() {
 
   connection.on('StateSync', (msg) => { logGameEvent('StateSync', msg); renderGameState(msg.state); });
   connection.on('TurnChanged', (msg) => logGameEvent('TurnChanged', msg));
-  connection.on('PlayerJoined', (msg) => logGameEvent('PlayerJoined', msg));
-  connection.on('PlayerLeft', (msg) => logGameEvent('PlayerLeft', msg));
+  connection.on('PlayerJoined', (msg) => { logGameEvent('PlayerJoined', msg); addRoomMember(msg.userId, msg.nickname); refreshRooms(); });
+  connection.on('PlayerLeft', (msg) => { logGameEvent('PlayerLeft', msg); removeRoomMember(msg.userId); refreshRooms(); });
   connection.on('NobleAwarded', (msg) => logGameEvent('NobleAwarded', msg));
   connection.on('NobleChoiceRequired', (msg) => logGameEvent('NobleChoiceRequired', msg));
   connection.on('FinalRoundTriggered', (msg) => logGameEvent('FinalRoundTriggered', msg));
   connection.on('GameOver', (msg) => logGameEvent('GameOver', msg));
-  connection.on('MatchFound', (msg) => {
+  connection.on('MatchFound', async (msg) => {
     logGameEvent('MatchFound', msg);
     document.getElementById('selectedRoomId').value = msg.roomId;
     document.getElementById('gameRoomId').value = msg.roomId;
-    invokeHub('JoinRoom', msg.roomId).catch((err) => logGameEvent('auto-join(매칭 성사) 실패', { message: String(err) }));
+    try {
+      await invokeHub('JoinRoom', msg.roomId);
+      const detail = await api(`/rooms/${msg.roomId}`);
+      if (detail.status === 200) seedRoomMembers(detail.body);
+    } catch (err) {
+      logGameEvent('auto-join(매칭 성사) 실패', { message: String(err) });
+    }
   });
-  connection.onclose(() => { hubConnection = null; setHubStatus(false); });
+  connection.onclose(() => { hubConnection = null; setHubStatus(false); clearRoomMembers(); });
 
   await connection.start();
   hubConnection = connection;
@@ -573,6 +658,7 @@ document.getElementById('btnHubDisconnect').addEventListener('click', async () =
   await hubConnection.stop();
   hubConnection = null;
   setHubStatus(false);
+  clearRoomMembers();
 });
 
 async function invokeHub(method, ...args) {
@@ -589,16 +675,19 @@ function parseGemList(text) {
   return text.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-document.getElementById('btnHubJoinRoom').addEventListener('click', () => {
+document.getElementById('btnHubJoinRoom').addEventListener('click', async () => {
   const id = currentGameRoomId();
   if (!id) return alert('Game Room ID를 입력하세요.');
-  invokeHub('JoinRoom', id);
+  await invokeHub('JoinRoom', id);
+  const detail = await api(`/rooms/${id}`);
+  if (detail.status === 200) seedRoomMembers(detail.body);
 });
 
-document.getElementById('btnHubLeaveRoom').addEventListener('click', () => {
+document.getElementById('btnHubLeaveRoom').addEventListener('click', async () => {
   const id = currentGameRoomId();
   if (!id) return alert('Game Room ID를 입력하세요.');
-  invokeHub('LeaveRoom', id);
+  await invokeHub('LeaveRoom', id);
+  if (currentRoomMembers?.roomId === id) clearRoomMembers();
 });
 
 document.getElementById('btnHubStartGame').addEventListener('click', () => {

@@ -10,9 +10,28 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Hubs;
 
+/// cardId(특정 카드 지정)와 tier(블라인드 드로우) 중 하나만 채워진다.
+/// 프론트(Dart) SignalR 클라이언트가 List&lt;Object&gt; 위치 인자에 null을 못 담기 때문에
+/// 객체 하나로 감싸서 받는다.
+public record ReserveCardRequest(string? CardId, int? Tier);
+
 [Authorize]
 public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
 {
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var userId = Context.User!.GetUserId();
+
+        var roomIds = await db.RoomPlayers
+            .Where(p => p.UserId == userId)
+            .Select(p => p.RoomId)
+            .ToListAsync();
+        foreach (var roomId in roomIds)
+            await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
+
+        await base.OnDisconnectedAsync(exception);
+    }
+
     public async Task JoinRoom(int roomId)
     {
         var userId = Context.User!.GetUserId();
@@ -26,14 +45,16 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
         if (state is not null)
             await Clients.Caller.SendAsync("StateSync", GameHubMessages.BuildFullSync(state));
 
-        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerJoined", new { userId });
+        var nickname = await db.Users.Where(u => u.Id == userId).Select(u => u.Nickname).FirstAsync();
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerJoined", new { userId, nickname });
     }
 
     public async Task LeaveRoom(int roomId)
     {
         var userId = Context.User!.GetUserId();
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, GameHubMessages.GroupName(roomId));
-        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId });
+        var nickname = await db.Users.Where(u => u.Id == userId).Select(u => u.Nickname).FirstAsync();
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId)).SendAsync("PlayerLeft", new { userId, nickname });
     }
 
     public async Task StartGame(int roomId)
@@ -64,11 +85,11 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
             state => GameEngine.PurchaseCard(state, userId, cardId, source));
     }
 
-    public async Task ReserveCard(int roomId, string? cardId, int? tier)
+    public async Task ReserveCard(int roomId, ReserveCardRequest request)
     {
         var userId = Context.User!.GetUserId();
-        await HandleActionAsync(roomId, userId, "ReserveCard", new { cardId, tier },
-            state => GameEngine.ReserveCard(state, userId, cardId, tier));
+        await HandleActionAsync(roomId, userId, "ReserveCard", new { request.CardId, request.Tier },
+            state => GameEngine.ReserveCard(state, userId, request.CardId, request.Tier));
     }
 
     public async Task DiscardTokens(int roomId, List<string> gems)
@@ -83,6 +104,22 @@ public class GameHub(GameStateStore stateStore, AppDbContext db) : Hub
         var userId = Context.User!.GetUserId();
         await HandleActionAsync(roomId, userId, "ClaimNoble", new { nobleId },
             state => GameEngine.ClaimNoble(state, userId, nobleId));
+    }
+
+    public async Task SendChatMessage(int roomId, string text)
+    {
+        // TODO: README 7절 명세는 "발신자의 친구 목록"에게만 전달하도록 되어 있으나,
+        // 친구(Friend) 기능이 아직 백엔드에 구현되어 있지 않아 우선 방 전체 브로드캐스트로 둔다.
+        var userId = Context.User!.GetUserId();
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId))
+            .SendAsync("ChatMessage", new { playerId = userId, text, ts = DateTime.UtcNow });
+    }
+
+    public async Task SendEmote(int roomId, string emoteId)
+    {
+        var userId = Context.User!.GetUserId();
+        await Clients.OthersInGroup(GameHubMessages.GroupName(roomId))
+            .SendAsync("EmoteReceived", new { playerId = userId, emoteId, ts = DateTime.UtcNow });
     }
 
     public async Task RequestResync(int roomId, int lastSequence)
