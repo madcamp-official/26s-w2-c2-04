@@ -1,0 +1,11 @@
+# KCLOUD VM 배포용 오버라이드. docker-compose.yml과 함께 적용한다:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+#
+# 이 파일 자체는 커밋되지만, 실제 값은 VM에만 있는 .env(git-ignored)에서 온다.
+# .env가 없으면 빈 값으로 치환되어 앱이 정상 기동하지 않으니, 배포 전 VM에
+# .env.example을 참고해 .env를 준비해둬야 한다.
+
+services:
+  backend:
+    environment:
+      Jwt__Key: ${JWT_KEY}

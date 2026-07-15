@@ -107,16 +107,20 @@
 | POST | `/auth/link/{provider}` | 로그인 상태에서 소셜 계정 추가 연동 | `{"providerToken": "kakao_atk_5f6a7b8c9d0e"}` | `{"linkedProviders": ["kakao", "google"]}` | provider: `kakao`\|`naver`\|`google`, 선택 기능 |
 | POST | `/auth/refresh` | Access Token 재발급 | `{"refreshToken": "rtk_3f9a8c2b1d7e4f5a6b7c8d9e0f1a2b3c"}` | `{"accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1XzEwMjQifQ.new_sig...", "expiresIn": 3600}` | Refresh Token 필요 |
 | POST | `/auth/logout` | 로그아웃 | 없음 | 204 No Content | Access Token 필요, SocialHub 연결도 함께 종료 |
+| GET | `/auth/me` | 내 계정 정보 조회 | 없음 | `{"userId": 1024, "email": "hong@example.com", "nickname": "스플랜더왕", "avatarUrl": null, "linkedProviders": ["kakao"], "createdAt": "2026-07-10T09:00:00Z"}` | 인증 필요. 2절 프로필 API와 달리 이메일·연동 계정 등 계정 자체 정보 |
 
 ---
-## 2. 유저 API (REST)
+## 2. 프로필(Profile) API (REST)
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
-| GET | `/users/{userID}` | 프로필 조회 | 없음 | `{"userId": "u_1024", "nickname": "스플랜더왕", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_1024.png", "createdAt": "2026-07-10T09:00:00Z", "recentGames": [{"gameId": "g_1024", "playersNumber": 3, "gameType": "Unranked", "place": 2}], "rankings": {"2": {"rank": 210, "mmr": 1710, "gamesPlayedSeason": 9, "avgPlace": 1.7}, "3": {"rank": 357, "mmr": 1820, "gamesPlayedSeason": 38, "avgPlace": 2.1}, "4": {"rank": 512, "mmr": 1655, "gamesPlayedSeason": 15, "avgPlace": 2.6}}}` | `rankings`는 인원수(`2`\|`3`\|`4`)별 랭킹전 MMR·순위·이번 시즌 게임 수·평균 등수(6. 리더보드 API 참고) |
-| PATCH | `/users/me` | 닉네임/아바타 수정 | `{"nickname": "새로운닉네임", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_1024_v2.png"}` (둘 다 선택) | `{"userId": "u_1024", "nickname": "새로운닉네임", "provider": "email", "linkedProviders": ["kakao"], "avatarUrl": "https://cdn.splendor-online.com/avatars/u_1024_v2.png", "createdAt": "2026-07-10T09:00:00Z"}` | 인증 필요 |
-| GET | `/users/{userId}/stats` | 전적 조회 | 없음 | `{"userId": "u_1024", "gamesPlayed": 42, "wins": 27, "avgScore": 15.4, "avgTurns": 23.1}` | 인증 필요 |
-| GET | `/users/search` | 닉네임으로 유저 검색 | Query: `nickname=스플랜더` | `{"users": [{"userId": "u_2048", "nickname": "스플랜더고수", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_2048.png"}]}` | 친구 추가 시 사용 |
+| GET | `/profile/me` | 내 프로필 조회 | 없음 | `{"userId": 1024, "nickname": "스플랜더왕", "avatarUrl": "/profile/1024/avatar", "totalGamesPlayed": 42, "overallAvgPlace": 2.1, "rankings": [{"playerCount": 3, "rank": 357, "mmr": 1820, "gamesPlayed": 38, "avgPlace": 2.1}], "recentMatches": [{"gameId": 9911, "playerCount": 3, "place": 2, "score": 15, "isRanked": true, "playedAt": "2026-07-10T09:00:00Z"}]}` | 인증 필요. `avatarUrl`은 아바타 미설정 시 `null`, `rankings`는 참가한 인원수별로만 항목이 존재(6. 리더보드 API 참고) |
+| GET | `/profile/{userId}` | 다른 유저 프로필 조회 | 없음 | `/profile/me`와 동일 구조 | 인증 필요 |
+| POST | `/profile/avatar` | 아바타 이미지 업로드 | `multipart/form-data`, `file` 필드(png/jpeg/webp, 2MB 이하) | 갱신된 프로필 객체(`/profile/me`와 동일 구조) | 인증 필요. Content-Type 헤더뿐 아니라 파일 시그니처(매직 넘버)까지 검증, 위반 시 400(`INVALID_PAYLOAD`) |
+| DELETE | `/profile/avatar` | 아바타 이미지 삭제 | 없음 | 204 No Content | 인증 필요 |
+| GET | `/profile/{userId}/avatar` | 아바타 원본 이미지 조회 | 없음 | 이미지 바이너리(`Content-Type`은 업로드 시 형식) | 인증 불필요, 아바타 없으면 404 |
+
+닉네임/이메일 변경 API는 구현되어 있지 않습니다(가입 시 지정한 닉네임 고정). 유저 검색은 이 절이 아니라 3절의 `GET /friends/search`를 사용합니다.
 
 ---
 
@@ -124,12 +128,15 @@
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
-| GET | `/friends` | 내 친구 목록 조회 | Query: `status=online` (선택, `online`\|`offline`\|`in_game`) | `{"friends": [{"userId": "u_2048", "nickname": "김도현", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_2048.png", "status": "online"}]}` | 인증 필요, 상태는 SocialHub 프레즌스와 연동 |
-| POST | `/friends/requests` | 친구 요청 보내기 | `{"targetUserId": "u_2048"}` | `{"requestId": "fr_7788", "status": "PENDING", "createdAt": "2026-07-10T09:05:00Z"}` | 자기 자신 요청 시 400(`SELF_FRIEND_REQUEST`), 이미 친구면 409(`ALREADY_FRIENDS`) |
-| GET | `/friends/requests` | 친구 요청 목록 조회 | Query: `direction=incoming` (`incoming`\|`outgoing`) | `{"requests": [{"requestId": "fr_7788", "fromUserId": "u_2048", "toUserId": "u_1024", "status": "PENDING", "createdAt": "2026-07-10T09:05:00Z"}]}` | 인증 필요 |
-| POST | `/friends/requests/{requestId}/accept` | 친구 요청 수락 | 없음 | `{"userId": "u_2048", "nickname": "김도현", "status": "online"}` | 양쪽 친구 목록에 상호 등록됨 |
-| POST | `/friends/requests/{requestId}/reject` | 친구 요청 거절 | 없음 | 204 No Content | |
-| DELETE | `/friends/{friendUserId}` | 친구 삭제 | 없음 | 204 No Content | 상호 삭제(양방향) |
+| GET | `/friends` | 내 친구 목록 조회 | 없음(필터 쿼리 없음, 항상 전체 반환) | `{"friends": [{"userId": 2048, "nickname": "김도현", "avatarUrl": null, "status": "online", "friendsSince": "2026-07-10T09:05:00Z"}]}` | 인증 필요, `status`는 SocialHub 프레즌스와 실시간 연동(`online`\|`offline`\|`in_game`\|`away`) |
+| GET | `/friends/search` | 친구 추가용 유저 검색 | Query: `query=스플랜더` (닉네임 부분일치 또는 userId 완전일치) | `{"users": [{"userId": 2048, "nickname": "스플랜더고수", "avatarUrl": null}]}` | 인증 필요, 최대 20건, 본인 제외 |
+| POST | `/friends/requests` | 친구 요청 보내기 | `{"targetUserId": 2048}` | `{"requestId": 7788, "userId": 2048, "nickname": "김도현", "avatarUrl": null, "createdAt": "2026-07-10T09:05:00Z"}` | 자기 자신 요청 시 400(`INVALID_PAYLOAD`), 이미 친구면 409(`ALREADY_FRIENDS`), 이미 보낸 요청 있으면 409(`REQUEST_ALREADY_SENT`). 상대가 이미 나에게 요청을 보낸 상태였다면 새로 만들지 않고 즉시 수락 처리되어 `FriendResponse`(위 `/friends` 항목과 동일 구조)가 대신 반환됨 |
+| GET | `/friends/requests` | 친구 요청 목록 조회(받은 것 + 보낸 것 함께) | 없음 | `{"incoming": [{"requestId": 7788, "userId": 2048, "nickname": "김도현", "avatarUrl": null, "createdAt": "2026-07-10T09:05:00Z"}], "outgoing": []}` | 인증 필요 |
+| POST | `/friends/requests/{requestId}/accept` | 친구 요청 수락 | 없음 | `{"userId": 2048, "nickname": "김도현", "avatarUrl": null, "status": "offline", "friendsSince": "2026-07-10T09:05:00Z"}` | 받은 요청만 수락 가능(아니면 403 `NOT_REQUEST_RECIPIENT`), 양쪽 친구 목록에 상호 등록됨 |
+| DELETE | `/friends/requests/{requestId}` | 친구 요청 거절/취소 | 없음 | 204 No Content | 인증 필요. 요청 당사자(보낸 쪽/받은 쪽 둘 다)만 가능(아니면 403 `NOT_REQUEST_PARTICIPANT`) — 받은 쪽이 호출하면 거절(상대에게 `FriendRequestDeclined` push), 보낸 쪽이 호출하면 취소(상대에게 `FriendRequestCancelled` push) |
+| DELETE | `/friends/{friendUserId}` | 친구 삭제 | 없음 | 204 No Content | 상호 삭제(양방향), 친구 아니면 404(`NOT_FRIENDS`) |
+| GET | `/friends/{userId}/messages` | 친구와의 1:1 채팅 기록 조회 | Query: `beforeId`, `limit`(기본 30, 최대 100, 모두 선택) | `{"messages": [{"messageId": 501, "senderId": 1024, "receiverId": 2048, "body": "오늘 한 판 할래?", "createdAt": "2026-07-10T09:22:00Z"}], "hasMore": false}` | 인증 필요, 친구 아니면 403(`NOT_FRIENDS`). `beforeId` 이전 메시지를 최신순으로 페이지네이션 |
+| POST | `/friends/{userId}/messages` | 친구에게 1:1 채팅 전송(REST) | `{"body": "오늘 한 판 할래?"}` | `{"messageId": 501, "senderId": 1024, "receiverId": 2048, "body": "오늘 한 판 할래?", "createdAt": "2026-07-10T09:22:00Z"}` | 인증 필요, 저장 + 상대에게 SocialHub `FriendMessageReceived` push까지 함께 처리(9.1절 `SendFriendMessage` invoke와 동일 로직 공유). 1~1000자, 친구 아니면 403(`NOT_FRIENDS`) |
 
 ---
 ## 4. 방(Room) 관리 API (REST)
@@ -140,7 +147,8 @@
 | GET | `/rooms` | 방 목록 조회 | Query: `page=1&limit=20` (`limit` 기본 20, 모두 선택) | `{"rooms": [{"roomId": "r_5566", "hostId": "u_1024", "maxPlayers": 4, "players": [{"userId": "u_1024", "nickname": "스플랜더왕"}], "createdAt": "2026-07-10T09:10:00Z"}], "total": 1, "page": 1}` | 인증 필요, 친구 여부와 무관하게 매칭 가능. 대기 중(WAITING)인 방만 반환하므로 목록 항목에는 `status`가 없음 |
 | GET | `/rooms/{roomId}` | 방 상세 조회 | 없음 | Room 객체(생성 응답과 동일 구조, 예: `{"roomId": "r_5566", "hostId": "u_1024", "status": "WAITING", "maxPlayers": 4, "players": [...], "createdAt": "2026-07-10T09:10:00Z"}`) | 인증 필요 |
 | POST | `/rooms/{roomId}/join` | 방 참가(좌석 예약) | `{"password": "1234"}` (비공개 방일 때만, 그 외엔 `{}`) | 갱신된 Room 객체(생성 응답과 동일 구조) | 인증 필요, 정원/비밀번호 검증(409/403) |
-| POST | `/rooms/{roomId}/leave` | 방 퇴장 | 없음 | 204 No Content | 인증 필요 |
+| POST | `/rooms/{roomId}/invites` | 친구를 비공개 방에 초대 | `{"targetUserId": 2048}` | 204 No Content | 인증 필요, 방 멤버만 호출 가능(403 `NOT_A_MEMBER`), 대상은 친구여야 함(403 `NOT_FRIENDS`). 대상에게 GameHub로 `RoomInvite` push(8절), 비공개 방이면 비밀번호 없이 1회 입장 가능한 초대권 발급 |
+| POST | `/rooms/{roomId}/leave` | 방 퇴장 | 없음 | 204 No Content | 인증 필요, 방/멤버가 이미 없어도 204(멱등) |
 | POST | `/rooms/{roomId}/ready` | 준비 상태 변경 **[신규]** | `{"ready": true}` | 갱신된 Room 객체 | 인증 필요. 캐주얼(일반) 방의 방장이 아닌 멤버 전용 — 방장이 호출하면 400(`HOST_CANNOT_READY`), 방 멤버가 아니면 403(`NOT_A_MEMBER`). 성공 시 방 그룹에 SignalR `PlayerReadyChanged` 브로드캐스트(8절) |
 | POST | `/rooms/{roomId}/start` | 게임 시작 | 없음 | `{"gameId": "g_9911", "phase": "PLAYING"}` | 방장만 가능(403). 캐주얼 방은 방장을 제외한 전원이 준비 완료 상태여야 함(아니면 409 `MEMBERS_NOT_READY`) — 랭킹전은 매칭 성사 시 자동 시작이라 이 제약과 무관. 이후 SignalR로 진행 |
 | DELETE | `/rooms/{roomId}` | 방 삭제 | 없음 | 204 No Content | 방장만, 시작 전에만 가능(409) |
@@ -222,6 +230,7 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
 | ON | `GameOver` | 게임 종료 | - | `{"winnerId": "u_1024", "finalScores": [{"userId": "u_1024", "score": 16}, {"userId": "u_2048", "score": 13}], "tieBreakReason": null}` | |
 | ON | `ChatMessage` | 채팅 수신 | - | `{"playerId": "u_2048", "text": "안녕하세요!", "ts": "2026-07-10T09:21:00Z"}` | **발신자와 친구인 클라이언트에게만** push됨 |
 | ON | `EmoteReceived` | 감정표현 수신 | - | `{"playerId": "u_2048", "emoteId": "emote_thumbsup", "ts": "2026-07-10T09:21:05Z"}` | 방 전체 브로드캐스트(친구 제한 없음) |
+| ON | `RoomInvite` | 비공개 방 초대 수신 | - | `{"roomId": 5566, "fromUserId": 1024, "fromNickname": "스플랜더왕", "isPrivate": true, "maxPlayers": 4}` | REST `POST /rooms/{roomId}/invites`(4절) 발생 시 대상에게 push |
 | ON | `ErrorOccurred` | 비동기 오류 통지 | - | `{"code": "NOT_YOUR_TURN", "message": "현재 당신의 턴이 아닙니다."}` | `invoke()` 예외와 별개(세션 강제종료 등) |
 ## 9. SocialHub (친구 · 로비 채팅 전용, 신규)
 
@@ -256,12 +265,26 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
-| - | `AUTH_INVALID_TOKEN` | 인증 실패 | - | HTTP 401 또는 `HubException` | 만료/위조 토큰 |
+| - | `AUTH_INVALID_TOKEN` | 인증 실패 | - | HTTP 401 또는 `HubException` | 만료/위조 토큰(JWT 미들웨어가 처리, 별도 code 필드 없이 401만 반환) |
 | - | `OAUTH_VERIFICATION_FAILED` | 소셜 로그인 토큰 검증 실패 | - | HTTP 401 | 카카오/네이버/구글 API 검증 실패 |
+| - | `EMAIL_ALREADY_EXISTS` | 이미 가입된 이메일 | - | HTTP 409 | `/auth/register` |
+| - | `ALREADY_LOGGED_IN` | 이미 다른 기기/브라우저에서 로그인 중 | - | HTTP 409(REST 로그인) 또는 `HubException`(SocialHub 연결 시) | `/auth/login`, `/auth/oauth/*`, 그리고 SocialHub `OnConnectedAsync`(캐시된 토큰으로 재연결하는 경로까지 차단, 9절 참고) |
+| - | `ALREADY_LINKED` | 이미 다른 계정에 연동된 소셜 계정 | - | HTTP 409 | `/auth/link/{provider}` |
+| - | `OAUTH_LOGIN_CONFLICT` | 소셜 최초 로그인 동시 요청 충돌 | - | HTTP 409 | 드묾, 재시도로 해결 |
+| - | `USER_NOT_FOUND` | 대상 유저 없음 | - | HTTP 404 | `POST /friends/requests`의 `targetUserId` |
 | - | `ROOM_NOT_FOUND` | 방 없음 | - | HTTP 404 | 잘못된 roomId |
 | - | `ROOM_FULL` | 방 인원 초과 | - | HTTP 409 | maxPlayers 도달 |
+| - | `ROOM_ALREADY_STARTED` | 이미 시작/삭제 불가 상태의 방에 조작 시도 | - | HTTP 409 | join/invites/ready/start/삭제 공통 |
+| - | `ROOM_NOT_HOST` | 방장 전용 작업을 비방장이 시도 | - | HTTP 403 | `/rooms/{roomId}/start`, `DELETE /rooms/{roomId}` |
+| - | `ROOM_INVALID_PASSWORD` | 비공개 방 비밀번호 불일치 | - | HTTP 403 | `/rooms/{roomId}/join` |
+| - | `ROOM_RANKED_ONLY_VIA_MATCHMAKING` | 랭킹전 방에 직접 참가 시도 | - | HTTP 403 | 랭킹전 방은 매칭 API로만 입장 가능 |
+| - | `ALREADY_IN_ROOM` | 이미 다른 방에 참가 중 | - | HTTP 409 | 방 생성/참가/매칭 등록 시 |
+| - | `TARGET_ALREADY_IN_ROOM` | 초대 대상이 이미 다른 방에 참가 중 | - | HTTP 409 | `/rooms/{roomId}/invites` |
+| - | `NOT_A_MEMBER` | 방 멤버가 아닌 유저가 방 전용 작업 시도 | - | HTTP 403 | `/rooms/{roomId}/invites`, `/rooms/{roomId}/ready` |
+| - | `NOT_ENOUGH_PLAYERS` | 인원 부족 상태로 시작 시도 | - | HTTP 409 | 최소 2명 필요 |
 | - | `HOST_CANNOT_READY` **[신규]** | 방장이 준비 API 호출 | - | HTTP 400 | 방장은 준비 상태가 필요 없음 |
 | - | `MEMBERS_NOT_READY` **[신규]** | 미준비 멤버가 있는 상태로 시작 시도 | - | HTTP 409 | 캐주얼 방에서 방장 제외 전원 준비 완료 전엔 `/start` 불가 |
+| - | `ALREADY_QUEUED` | 다른 인원수로 이미 매칭 대기 중 | - | HTTP 409 | `/matchmaking/{playerCount}/ranked`, 같은 인원수 재등록은 멱등 처리(4-1절) |
 | - | `NOT_YOUR_TURN` | 턴 순서 위반 | - | `HubException` | currentPlayerId 불일치 |
 | - | `INVALID_TOKEN_SELECTION` | 토큰 획득 규칙 위반 | - | `HubException` | 3색 미충족/동색 4개 미만 |
 | - | `TOKEN_LIMIT_EXCEEDED` | 토큰 10개 초과 | - | `HubException` | 반납 없이 턴 종료 시도 |
@@ -271,11 +294,14 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 | - | `CARD_NOT_OWNED` | 예약 카드 소유권 불일치 | - | `HubException` | 타인의 예약 카드 구매 시도 |
 | - | `NOBLE_NOT_ELIGIBLE` | 귀족 조건 미충족 | - | `HubException` | 임의 nobleId 요청 |
 | - | `EMOTE_INVALID` | 정의되지 않은 emoteId | - | `HubException` | 10.4 목록에 없는 값 |
-| - | `NOT_FRIENDS` | 친구 아닌 대상에게 DM/채팅 시도 | - | `HubException` | `SendFriendMessage` 대상, 인게임 채팅 필터링 시에도 사용 |
-| - | `SELF_FRIEND_REQUEST` | 자기 자신에게 친구 요청 | - | HTTP 400 | |
-| - | `ALREADY_FRIENDS` | 이미 친구인 상대에게 요청 | - | HTTP 409 | |
-| - | `FRIEND_REQUEST_NOT_FOUND` | 잘못된 requestId | - | HTTP 404 | |
-| - | `INVALID_PAYLOAD` | 스키마 검증 실패 | - | HTTP 400 / `HubException` | 필드 누락/타입 오류 |
+| - | `NOT_FRIENDS` | 친구 아닌 대상에게 DM/채팅/초대/기록조회 시도 | - | HTTP 403 / `HubException` | REST(`/friends/{userId}/messages`, `/rooms/{roomId}/invites`) 와 `SendFriendMessage` invoke, 인게임 채팅 필터링 시에도 사용 |
+| - | `ALREADY_FRIENDS` | 이미 친구인 상대에게 요청 | - | HTTP 409 | `POST /friends/requests` |
+| - | `REQUEST_ALREADY_SENT` | 이미 보낸 친구 요청 중복 전송 | - | HTTP 409 | `POST /friends/requests` |
+| - | `REQUEST_NOT_FOUND` | 잘못된 requestId로 수락 시도 | - | HTTP 404 | `POST /friends/requests/{requestId}/accept` (`DELETE`는 없으면 조용히 204) |
+| - | `REQUEST_ALREADY_RESOLVED` | 이미 수락/거절/취소된 요청 재처리 시도 | - | HTTP 409 | accept, `DELETE /friends/requests/{requestId}` |
+| - | `NOT_REQUEST_RECIPIENT` | 받은 사람이 아닌 유저가 요청 수락 시도 | - | HTTP 403 | `POST /friends/requests/{requestId}/accept` |
+| - | `NOT_REQUEST_PARTICIPANT` | 요청 당사자가 아닌 유저가 거절/취소 시도 | - | HTTP 403 | `DELETE /friends/requests/{requestId}` |
+| - | `INVALID_PAYLOAD` | 스키마 검증 실패 | - | HTTP 400 / `HubException` | 필드 누락/타입 오류, 아바타 업로드 형식 오류 포함 |
 | - | `RATE_LIMITED` | 요청 과다 | - | HTTP 429 / `HubException` | |
 | - | `INTERNAL_ERROR` | 서버 내부 오류 | - | HTTP 500 | |
 ---
