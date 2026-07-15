@@ -9,3 +9,5 @@ services:
   backend:
     environment:
       Jwt__Key: ${JWT_KEY}
+      Swagger__Username: ${SWAGGER_USERNAME}
+      Swagger__Password: ${SWAGGER_PASSWORD}

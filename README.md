@@ -95,6 +95,14 @@
 <!-- DB 스키마, JSON 구조, 파일 저장 방식 등 -->
 
 ### API / 외부 서비스 연동
+
+배포 주소: `https://api.splendor-online.madcamp-kaist.org`
+
+| Endpoint | 설명 | 비고 |
+|---|---|---|
+| `GET /` | 헬스체크 | 인증 불필요. DB/Redis 둘 다 연결되면 200 `{"status": "ok"}`, 하나라도 안 되면 503 `{"status": "degraded", "db": ..., "redis": ...}` |
+| `GET /swagger` | API 문서(Swagger UI) | Basic Auth 필요(`Swagger:Username`/`Swagger:Password`, 배포 환경 값은 팀 채널 참고). `/openapi/v1.json`(원본 스펙)도 동일하게 보호됨 |
+
 ## 1. 인증 API (REST)
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |

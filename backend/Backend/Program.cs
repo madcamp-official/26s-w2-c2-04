@@ -113,14 +113,59 @@ var app = builder.Build();
 await app.Services.GetRequiredService<PresenceStore>().ResetConnectionCountersAsync();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+
+// /swagger, /openapi는 환경과 무관하게 항상 켜두되(배포 환경에서도 API 문서를 볼 수
+// 있어야 하니), Basic Auth로 가드한다. Swagger:Username/Password가 설정 안 돼있으면
+// (배포 시 .env 누락 등) 기본값으로 여는 대신 항상 401을 던져 안전한 쪽으로 실패한다.
+var swaggerUsername = app.Configuration["Swagger:Username"];
+var swaggerPassword = app.Configuration["Swagger:Password"];
+app.Use(async (context, next) =>
 {
-    app.MapOpenApi();
-    app.UseSwaggerUI(options =>
+    if (!context.Request.Path.StartsWithSegments("/swagger") && !context.Request.Path.StartsWithSegments("/openapi"))
     {
-        options.SwaggerEndpoint("/openapi/v1.json", "Backend API v1");
-    });
-}
+        await next();
+        return;
+    }
+
+    var authorized = false;
+    if (!string.IsNullOrEmpty(swaggerUsername) && !string.IsNullOrEmpty(swaggerPassword))
+    {
+        var header = context.Request.Headers.Authorization.ToString();
+        if (header.StartsWith("Basic ", StringComparison.Ordinal))
+        {
+            try
+            {
+                var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(header["Basic ".Length..].Trim()));
+                var separatorIndex = decoded.IndexOf(':');
+                if (separatorIndex >= 0)
+                {
+                    var providedUsername = decoded[..separatorIndex];
+                    var providedPassword = decoded[(separatorIndex + 1)..];
+                    authorized = providedUsername == swaggerUsername && providedPassword == swaggerPassword;
+                }
+            }
+            catch (FormatException)
+            {
+                // 잘못된 base64 등 -> authorized는 false로 유지, 아래에서 401 응답.
+            }
+        }
+    }
+
+    if (!authorized)
+    {
+        context.Response.Headers.WWWAuthenticate = "Basic realm=\"Swagger\"";
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
+
+    await next();
+});
+
+app.MapOpenApi();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/openapi/v1.json", "Backend API v1");
+});
 
 if (!app.Environment.IsDevelopment())
 {
@@ -160,6 +205,29 @@ if (app.Environment.IsDevelopment())
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapGet("/", async (AppDbContext db, IConnectionMultiplexer redis) =>
+{
+    var dbOk = await db.Database.CanConnectAsync();
+
+    var redisOk = true;
+    try
+    {
+        await redis.GetDatabase().PingAsync();
+    }
+    catch (RedisException)
+    {
+        redisOk = false;
+    }
+
+    if (dbOk && redisOk)
+        return Results.Ok(new { status = "ok" });
+
+    return Results.Json(
+        new { status = "degraded", db = dbOk, redis = redisOk },
+        statusCode: StatusCodes.Status503ServiceUnavailable);
+})
+    .WithName("HealthCheck");
 
 app.MapAuthEndpoints();
 app.MapRoomEndpoints();
