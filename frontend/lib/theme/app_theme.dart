@@ -265,6 +265,52 @@ class OrnateTitle extends StatelessWidget {
   }
 }
 
+/// 폼류 화면(로그인/회원가입/설정 등)에서 쓰는, 스크롤 대신 "통째로 축소"해서
+/// 항상 화면 안에 들어오게 하는 컨테이너. 기기 글꼴 배율이 크거나 화면이 작아
+/// 콘텐츠가 세로로 넘치면, 잘려서 안 보이거나 스크롤해야 하는 대신 가로·세로
+/// 비율을 유지한 채 통째로 줄어들어 항상 한 화면에 다 보인다.
+class ScaleToFitForm extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets padding;
+  final double maxWidth;
+
+  const ScaleToFitForm({
+    super.key,
+    required this.child,
+    this.padding = EdgeInsets.zero,
+    this.maxWidth = double.infinity,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: constraints.maxHeight),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: ConstrainedBox(
+                // FittedBox는 자식 크기를 잴 때 제약을 무한대로 풀어버리므로,
+                // 실제 화면 너비로 다시 못 박아줘야 TextField 등이 정상적으로
+                // 자기 너비를 계산할 수 있다(안 그러면 무한 너비 오류가 난다).
+                constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                child: Padding(
+                  padding: padding,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: child,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// 다크 패널 배경 위의 은은한 방사형 하이라이트 배경.
 class GemBackdrop extends StatelessWidget {
   final Widget child;

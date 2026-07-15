@@ -88,7 +88,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       appBar: AppBar(title: const Text('GAME SETUP')),
       body: GemBackdrop(
         child: SafeArea(
-          child: SingleChildScrollView(
+          child: ScaleToFitForm(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
             child: Column(
               children: [

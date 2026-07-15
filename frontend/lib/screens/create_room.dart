@@ -71,7 +71,7 @@ class _CreateRoomScreenState extends ConsumerState<CreateRoomScreen> {
       ),
       body: GemBackdrop(
         child: SafeArea(
-          child: SingleChildScrollView(
+          child: ScaleToFitForm(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
             child: Column(
               children: [
