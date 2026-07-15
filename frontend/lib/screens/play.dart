@@ -14,6 +14,7 @@ import '../models/game_hub_event.dart';
 import '../models/game_state.dart';
 import '../models/gameroom.dart';
 import '../models/gem.dart';
+import '../models/noble.dart';
 import '../state/active_room_controller.dart';
 import '../state/auth_controller.dart';
 import '../state/game_controller.dart';
@@ -534,6 +535,13 @@ class _GameBoardState extends State<_GameBoard> {
   bool _showTimeoutToast = false;
   Timer? _timeoutToastTimer;
 
+  // 획득한 귀족(player.nobles)은 서버가 id만 보내주므로, 요구조건/점수 같은 상세는
+  // 보드에 떠 있는 동안(boardNobles) 본 Noble 객체를 여기 누적해뒀다가 팝업에서
+  // 쓴다. 스플렌더는 게임 시작 시 모든 귀족이 보드에 공개되므로, 처음부터 지켜본
+  // 클라이언트는 나중에 누가 가져간 귀족이라도 여기서 상세를 찾을 수 있다(중간
+  // 재접속 등으로 못 본 귀족은 이미지만 보여준다).
+  final Map<String, Noble> _nobleRegistry = {};
+
   @override
   void initState() {
     super.initState();
@@ -571,9 +579,24 @@ class _GameBoardState extends State<_GameBoard> {
   }
 
   void _pushStateToGame() {
+    // 보드에 떠 있는 귀족을 볼 때마다 레지스트리에 담아둔다(뒤에 획득돼 보드에서
+    // 사라져도 상세 팝업에서 요구조건을 보여줄 수 있게).
+    for (final noble in widget.gameState.boardNobles) {
+      _nobleRegistry[noble.id] = noble;
+    }
     widget.game.updateGameState(
       widget.gameState,
       nobleChoiceIds: widget.pendingNobleChoice ?? const [],
+    );
+  }
+
+  /// 획득한 귀족 타일을 탭하면 카드처럼 큰 이미지 + 원래 요구조건을 팝업으로
+  /// 보여준다. 요구조건은 레지스트리에서 찾고, 없으면(못 본 귀족) 이미지만 띄운다.
+  void _showNobleDetail(String nobleId) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) =>
+          _NobleDetailDialog(nobleId: nobleId, noble: _nobleRegistry[nobleId]),
     );
   }
 
@@ -667,6 +690,7 @@ class _GameBoardState extends State<_GameBoard> {
                 onCardTap: (card, {required reserved, required actionable}) =>
                     _showCardDetail(card,
                         reserved: reserved, actionable: actionable),
+                onNobleTap: _showNobleDetail,
               ),
               // 게임 중에도 메인 화면처럼 프로필/친구/설정을 열 수 있는 작은
               // 버튼들과, 상단 바에서 옮겨온 "나가기"·제한시간 타이머를 우하귀에
@@ -743,9 +767,20 @@ Color _gemPanelColor(String bonusWireValue) =>
 /// 좌/우 좌석 패널을 [RotatedBox]로 눕히기 전, 눕히지 않은 상태에서 차지하는
 /// "짧은 쪽" 치수. 좌/우에서는 이 값이 화면에 그려지는 폭이 되고, 상/하에서는
 /// 그냥 패널의 자연스러운 높이 예산으로 쓰입니다. 구매/예약 카드 줄이 이제
-/// 게임보드 오버레이(_GameBoardWithCardOverlays)로 옮겨갔으므로, _PlayerSeatPanel엔
-/// 아바타/이름 줄 + 토큰 줄 + 보너스 줄만 남아 예전(180)보다 훨씬 작다.
-const double _seatPanelCrossAxis = 100;
+/// 게임보드 오버레이(_GameBoardWithCardOverlays)로 옮겨갔고, _PlayerSeatPanel도
+/// [프로필]·[토큰 뱅크 2줄]·[점수]를 세로로 쌓지 않고 가로로 나란히 배치하도록
+/// 바꿔(토큰 뱅크 2줄만 세로로 겹침) 예전(100)보다 더 얇아졌다. 이 값이 작을수록
+/// 좌석이 차지하는 통로가 줄고 그만큼 게임보드(_TableLayout의 boardWidth)가
+/// 커진다 — 단, 패널 내용(토큰 2줄 + 상하 패딩)이 이 높이를 넘으면 ClipRect로
+/// 잘려나가므로 그보다 넉넉히 잡는다.
+const double _seatPanelCrossAxis = 66;
+
+/// 좌석 패널 안 "보유 토큰 뱅크 + 할인 토큰 뱅크"가 차지하는 고정 가로 폭.
+/// 토큰 칩(22~26px)+간격이 6개 들어갈 만큼으로 잡고, 이 폭의 절반(_seatTokenBankWidth/2)을
+/// 토큰 뱅크와 점수 오버레이 사이 간격으로 둔다(요청). 폭을 고정해두면 그 간격이
+/// 창 크기와 무관하게 항상 "토큰 뱅크 폭의 절반"으로 유지되고, 좌석 패널 전체는
+/// 내용 크기(mainAxisSize.min)로 줄어들어 예전처럼 게임보드 폭까지 늘어나지 않는다.
+const double _seatTokenBankWidth = 150;
 
 /// 구매/예약 카드 오버레이(_PlayerCardsRow)가 보드 가장자리 바로 바깥에서
 /// 차지하는 통로 두께(보드 변에 수직인 방향) = _overlayThicknessPerBoardWidth ×
@@ -825,6 +860,9 @@ typedef CardTapCallback = void Function(
   required bool actionable,
 });
 
+/// 획득한 귀족 타일을 탭했을 때 상세 팝업(큰 이미지 + 원래 요구조건)을 여는 콜백.
+typedef NobleTapCallback = void Function(String nobleId);
+
 /// 직사각 테이블에 4명이 둘러앉은 형태의 보드 레이아웃. 중앙에는 게임보드
 /// (_GameBoardWithCardOverlays, Flame 귀족/카드/토큰 + 각 플레이어의 구매/예약
 /// 카드 오버레이)를 board_component.dart의 BoardComponent.contentAspect(가로로
@@ -837,6 +875,7 @@ class _TableLayout extends StatelessWidget {
   final int myUserId;
   final Widget board;
   final CardTapCallback onCardTap;
+  final NobleTapCallback onNobleTap;
 
   const _TableLayout({
     required this.room,
@@ -844,6 +883,7 @@ class _TableLayout extends StatelessWidget {
     required this.myUserId,
     required this.board,
     required this.onCardTap,
+    required this.onNobleTap,
   });
 
   String _nicknameFor(int userId) {
@@ -876,24 +916,32 @@ class _TableLayout extends StatelessWidget {
   /// 없도록 합니다.
   Widget _sideSeat(GamePlayerState? player, int quarterTurns) {
     if (player == null) return const SizedBox.shrink();
+    // 좌석 패널은 이제 내용 크기(mainAxisSize.min)로 자란다. 좌/우 좌석은 통로
+    // 두께(_seatPanelCrossAxis)만 폭으로 주어지므로, 회전한 패널을 FittedBox로
+    // 그 폭·높이에 맞춰 축소해 담는다(넘쳐서 보드를 가리지 않도록 ClipRect도 유지).
     return ClipRect(
       child: SizedBox(
         width: _seatPanelCrossAxis,
-        child: RotatedBox(quarterTurns: quarterTurns, child: _seat(player)),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: RotatedBox(quarterTurns: quarterTurns, child: _seat(player)),
+        ),
       ),
     );
   }
 
-  /// 상/하 좌석도 동일한 이유로 높이를 [_seatPanelCrossAxis]로 제한하고 잘라냅니다.
-  /// 폭은 [width]로 제한해 중앙 보드 한 변의 길이보다 살짝 작게 맞춥니다 —
-  /// 이전에는 폭 제한이 없어 프로그램 창 가장자리까지 늘어났습니다.
+  /// 상/하 좌석. 높이는 [_seatPanelCrossAxis]로, 폭은 [width](보드 한 변보다 살짝
+  /// 작게)로 제한한 박스 안에 FittedBox(scaleDown)로 패널을 담는다. 패널이 내용
+  /// 크기로 작아졌으므로 이 박스가 더 크면 그대로(축소 없이) 가운데 정렬되고,
+  /// 더 작으면(좁은 창) 넘치지 않게 축소된다.
   Widget _centerSeat(GamePlayerState? player, double width) {
     if (player == null) return const SizedBox.shrink();
     return ClipRect(
       child: SizedBox(
         width: width,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: _seatPanelCrossAxis),
+        height: _seatPanelCrossAxis,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
           child: _seat(player),
         ),
       ),
@@ -960,6 +1008,7 @@ class _TableLayout extends StatelessWidget {
                         seats: seats,
                         myUserId: myUserId,
                         onCardTap: onCardTap,
+                        onNobleTap: onNobleTap,
                       ),
                     ),
                   ),
@@ -1010,7 +1059,7 @@ class _PlayerSeatPanel extends StatelessWidget {
 
     return Container(
       clipBehavior: Clip.hardEdge,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: isCurrentTurn
             ? AppColors.goldFaint.withValues(alpha: 0.12)
@@ -1021,74 +1070,108 @@ class _PlayerSeatPanel extends StatelessWidget {
               : AppColors.goldHairline,
         ),
       ),
-      child: Column(
+      // 좌석 패널을 가로로 얇게 배치한다: [프로필/이름] · [보유 토큰 뱅크 + 할인
+      // 토큰 뱅크] · [점수]. 두 토큰 뱅크가 프로필/이름과 점수 "사이"에 오도록
+      // 하고, 예전처럼 이름 줄/토큰 줄/보너스 줄을 세로로 쌓지 않으므로 패널의
+      // 세로 두께(_seatPanelCrossAxis)가 크게 줄어 그만큼 게임보드가 커진다.
+      child: Row(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 11,
-                backgroundColor: avatarToneFor(nickname),
-                backgroundImage:
-                    avatarUrl != null ? NetworkImage(avatarUrl!) : null,
-                child: avatarUrl == null
-                    ? Text(
-                        nickname.characters.first,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: AppColors.textHeading,
+          // 프로필/이름 정보
+          CircleAvatar(
+            radius: 11,
+            backgroundColor: avatarToneFor(nickname),
+            backgroundImage:
+                avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+            child: avatarUrl == null
+                ? Text(
+                    nickname.characters.first,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.textHeading,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 62,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nickname,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textHeading,
+                  ),
+                ),
+                Text(
+                  isCurrentTurn ? '현재 차례' : '대기',
+                  style: kickerStyle(size: 8, letterSpacing: 1),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 보유 토큰 뱅크 + 할인(보너스) 토큰 뱅크 — 프로필과 점수 사이. 폭을
+          // _seatTokenBankWidth로 고정하고, 토큰 컴포넌트 사이 간격은 아주 좁게
+          // (right: 2) 둔다. 칩이 이 폭을 넘더라도 FittedBox로 축소해 담는다.
+          SizedBox(
+            width: _seatTokenBankWidth,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 보유 토큰 뱅크(골드 포함) — Gem.displayOrder로 순서 통일.
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final gem in Gem.displayOrder)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 2),
+                          child: _TokenChip(
+                            gem: gem,
+                            count: tokensByGem[gem.wireValue] ?? 0,
+                          ),
                         ),
-                      )
-                    : null,
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  // 할인 토큰 뱅크(구매 카드 보너스, gold 없음) — 같은 색 순서.
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final gem in gemDisplayOrder)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 2),
+                          child: _BonusChip(
+                            color: _gemPanelColor(gem),
+                            count: bonusesByGem[gem] ?? 0,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      nickname,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textHeading,
-                      ),
-                    ),
-                    Text(
-                      isCurrentTurn ? '현재 차례' : '대기',
-                      style: kickerStyle(size: 8, letterSpacing: 1),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 4),
-              Text('${player.points}', style: headingStyle(size: 14)),
-            ],
+            ),
           ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // 토큰 뱅크와 점수 사이 간격 = 토큰 뱅크 폭의 절반(요청).
+          const SizedBox(width: _seatTokenBankWidth / 2),
+          // 점수 정보
+          Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              for (final gem in Gem.values)
-                _TokenChip(
-                  gem: gem,
-                  count: tokensByGem[gem.wireValue] ?? 0,
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              for (final gem in gemDisplayOrder)
-                _BonusChip(
-                  color: _gemPanelColor(gem),
-                  count: bonusesByGem[gem] ?? 0,
-                ),
+              Text('${player.points}', style: headingStyle(size: 16)),
+              Text('점수', style: kickerStyle(size: 7, letterSpacing: 1)),
             ],
           ),
         ],
@@ -1106,6 +1189,7 @@ class _PlayerCardsRow extends StatelessWidget {
   final GamePlayerState player;
   final bool isMe;
   final CardTapCallback onCardTap;
+  final NobleTapCallback onNobleTap;
 
   /// 구매/예약 카드 위젯 한 장의 크기 — 게임보드 안 미구매 카드 크기의 0.5배로
   /// _GameBoardWithCardOverlays가 고정해서 넘긴다(구매 카드 스택과 예약 카드
@@ -1117,6 +1201,7 @@ class _PlayerCardsRow extends StatelessWidget {
     required this.player,
     required this.isMe,
     required this.onCardTap,
+    required this.onNobleTap,
     required this.cardWidth,
     required this.cardHeight,
   });
@@ -1178,6 +1263,23 @@ class _PlayerCardsRow extends StatelessWidget {
               ),
             ),
         ],
+        // 획득(자동구매)한 귀족 타일. 예약 카드 오른쪽에 구분선을 두고, 정사각
+        // 타일을 세로로 겹쳐 쌓아 통로 두께(카드 스택과 같은 maxColumnH) 안에
+        // 담는다 — 탭하면 큰 이미지 + 원래 요구조건 팝업이 뜬다.
+        if (player.nobles.isNotEmpty) ...[
+          Container(
+            width: 1,
+            height: 40 * gapFactor,
+            margin: EdgeInsets.symmetric(horizontal: 4 * gapFactor),
+            color: AppColors.goldHairline,
+          ),
+          _NobleStack(
+            nobleIds: player.nobles,
+            tileSize: cardWidth,
+            maxColumnH: cardHeight * _GemCardStack._maxColumnHRatio,
+            onNobleTap: onNobleTap,
+          ),
+        ],
       ],
     );
   }
@@ -1210,6 +1312,7 @@ class _GameBoardWithCardOverlays extends StatelessWidget {
   final _TableSeats seats;
   final int myUserId;
   final CardTapCallback onCardTap;
+  final NobleTapCallback onNobleTap;
 
   const _GameBoardWithCardOverlays({
     required this.board,
@@ -1219,6 +1322,7 @@ class _GameBoardWithCardOverlays extends StatelessWidget {
     required this.seats,
     required this.myUserId,
     required this.onCardTap,
+    required this.onNobleTap,
   });
 
   /// 통로 "길이" 방향(변을 따라가는 방향)으로 카드 줄이 넘칠 수 있는 극단적인
@@ -1231,6 +1335,7 @@ class _GameBoardWithCardOverlays extends StatelessWidget {
         player: player,
         isMe: player.userId == myUserId,
         onCardTap: onCardTap,
+        onNobleTap: onNobleTap,
         cardWidth: cardSize.x,
         cardHeight: cardSize.y,
       ),
@@ -1533,6 +1638,178 @@ class _CardThumb extends StatelessWidget {
           BoxShadow(color: Colors.black54, blurRadius: 3, offset: Offset(0, 1)),
         ],
       ),
+    );
+  }
+}
+
+/// 한 플레이어가 획득(자동구매)한 귀족 타일들을 세로로 겹쳐 쌓아 보여준다(구매
+/// 카드 스택과 같은 방식). 통로 두께([maxColumnH]) 안에 들어오도록 장수가 많으면
+/// 겹침 간격을 줄인다. 각 타일을 탭하면 [onNobleTap]으로 상세 팝업을 연다.
+class _NobleStack extends StatelessWidget {
+  final List<String> nobleIds;
+  final double tileSize; // 정사각 한 변
+  final double maxColumnH; // 세로로 겹쳐도 넘지 않을 최대 높이(통로 두께)
+  final NobleTapCallback onNobleTap;
+
+  const _NobleStack({
+    required this.nobleIds,
+    required this.tileSize,
+    required this.maxColumnH,
+    required this.onNobleTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (nobleIds.isEmpty) return const SizedBox.shrink();
+    final overlap = nobleIds.length == 1
+        ? 0.0
+        : ((maxColumnH - tileSize) / (nobleIds.length - 1))
+            .clamp(0.0, tileSize * 0.6);
+    final height = tileSize + overlap * (nobleIds.length - 1);
+    return SizedBox(
+      width: tileSize,
+      height: height,
+      child: Stack(
+        children: [
+          for (var i = 0; i < nobleIds.length; i++)
+            Positioned(
+              top: overlap * i,
+              child: _NobleThumb(
+                nobleId: nobleIds[i],
+                size: tileSize,
+                onTap: () => onNobleTap(nobleIds[i]),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NobleThumb extends StatelessWidget {
+  final String nobleId;
+  final double size;
+  final VoidCallback onTap;
+  const _NobleThumb({
+    required this.nobleId,
+    required this.size,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(3),
+          color: AppColors.panelAlt,
+          border:
+              Border.all(color: AppColors.gold.withValues(alpha: 0.55), width: 1),
+          image: DecorationImage(
+            image: AssetImage('assets/image/${GameAssets.nobleImage(nobleId)}'),
+            fit: BoxFit.cover,
+          ),
+          boxShadow: const [
+            BoxShadow(color: Colors.black54, blurRadius: 3, offset: Offset(0, 1)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 획득한 귀족 타일을 탭했을 때 뜨는 상세 팝업. 카드 팝업(_CardDetailDialog)과
+/// 같은 형식으로 큰 이미지 + 명성 점수 + "원래 요구조건"(자동 획득에 필요한
+/// 색상별 보너스 개수)을 보여준다. [noble]이 null이면(레지스트리에 없어 요구조건을
+/// 알 수 없을 때) 이미지와 기본 점수만 보여준다.
+class _NobleDetailDialog extends StatelessWidget {
+  final String nobleId;
+  final Noble? noble;
+  const _NobleDetailDialog({required this.nobleId, required this.noble});
+
+  @override
+  Widget build(BuildContext context) {
+    final imagePath = GameAssets.nobleImage(nobleId);
+    final requirement = noble?.requirement ?? const <String, int>{};
+    return AlertDialog(
+      backgroundColor: AppColors.panel,
+      title: Row(
+        children: [
+          Text('귀족', style: headingStyle(size: 15)),
+          const Spacer(),
+          Text('${noble?.points ?? 3}점', style: headingStyle(size: 15)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 170,
+              height: 170,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: AppColors.panelAlt,
+                image: DecorationImage(
+                  image: AssetImage('assets/image/$imagePath'),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text('원래 요구조건(할인 토큰)',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+          const SizedBox(height: 4),
+          if (requirement.isEmpty)
+            const Text('요구조건 정보 없음',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12))
+          else
+            Row(
+              children: [
+                for (final gem in gemDisplayOrder)
+                  if (requirement.containsKey(gem))
+                    Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: _gemPanelColor(gem),
+                              shape: BoxShape.circle,
+                              border:
+                                  Border.all(color: Colors.white24, width: 0.5),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${requirement[gem]}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+              ],
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('닫기'),
+        ),
+      ],
     );
   }
 }
@@ -1955,7 +2232,7 @@ class _DiscardBarState extends State<_DiscardBar> {
           Wrap(
             alignment: WrapAlignment.center,
             children: [
-              for (final gem in Gem.values)
+              for (final gem in Gem.displayOrder)
                 if ((widget.me.tokens[gem.wireValue] ?? 0) > 0)
                   _DiscardStepper(
                     gem: gem,

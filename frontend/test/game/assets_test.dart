@@ -43,9 +43,10 @@ void main() {
     test('보석 색상을 원소 테마 토큰 이름으로 매핑한다', () {
       expect(GameAssets.tokenImage('Diamond'), 'tokens/token_aether.png');
       expect(GameAssets.tokenImage('Sapphire'), 'tokens/token_water.png');
-      expect(GameAssets.tokenImage('Emerald'), 'tokens/token_earth.png');
+      // token_wind.png는 초록 코인(emerald), token_earth.png는 검정 코인(onyx).
+      expect(GameAssets.tokenImage('Emerald'), 'tokens/token_wind.png');
       expect(GameAssets.tokenImage('Ruby'), 'tokens/token_fire.png');
-      expect(GameAssets.tokenImage('Onyx'), 'tokens/token_wind.png');
+      expect(GameAssets.tokenImage('Onyx'), 'tokens/token_earth.png');
       expect(GameAssets.tokenImage('Gold'), 'tokens/token_gold.png');
     });
   });
