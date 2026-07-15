@@ -7,6 +7,7 @@ using Backend.Models;
 using Backend.Services;
 using Backend.Services.OAuth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -113,6 +114,21 @@ var app = builder.Build();
 await app.Services.GetRequiredService<PresenceStore>().ResetConnectionCountersAsync();
 
 // Configure the HTTP request pipeline.
+
+// Cloudflare Tunnel이 TLS를 종료하고 cloudflared -> 컨테이너에는 평문 HTTP로 넘기므로,
+// 이 미들웨어 없이는 Kestrel이 모든 요청을 http로 인식한다(Request.Scheme=http).
+// X-Forwarded-Proto를 신뢰하도록 켜서 OpenAPI 문서의 서버 URL 등이 https로 올바르게
+// 잡히게 한다. cloudflared는 VM 호스트에서 돌고 컨테이너로는 Docker NAT를 거쳐 들어와
+// 발신 IP가 loopback이 아니므로(기본 KnownProxies/KnownNetworks는 loopback만 신뢰),
+// 두 목록을 비워 신뢰 범위를 넓힌다 — 우리가 관리하는 같은 VM의 cloudflared가 유일한
+// 발신지라 안전하다.
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+};
+forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
 
 // /swagger, /openapi는 환경과 무관하게 항상 켜두되(배포 환경에서도 API 문서를 볼 수
 // 있어야 하니), Basic Auth로 가드한다. Swagger:Username/Password가 설정 안 돼있으면
