@@ -316,23 +316,14 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 
 ## 산출물 및 실행 방법
 
-- **산출물 설명:**
+- **산출물 설명:** 스플랜더 기반 보드게임 온라인 멀티플레이 플랫폼
 - **실행 환경:**
+  - 윈도우: https://drive.google.com/file/d/1Aim3u95zTP9AuJgoZBJq6Y1WF0Aqu9-n/view?usp=sharing
+  - 안드로이드: https://drive.google.com/file/d/1ew8ODyt5HHJdWDA6_6KELunYTourY-lX/view?usp=sharing
 - **실행 방법:**
+  - 윈도우: 설치 후 .exe파일 실행
+  - 안드로이드: 보안 관련 경고 무시 후 설치
 - **시연 영상 / 이미지:** (선택)
-
-### 실행 방법
-
-```bash
-# 환경 설정
-cp .env.example .env
-
-# 의존성 설치
-npm install   # 또는 pip install -r requirements.txt 등
-
-# 실행
-npm run dev   # 또는 python main.py 등
-```
 
 ### 기술 구성
 
