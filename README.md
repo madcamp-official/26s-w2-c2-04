@@ -29,7 +29,7 @@
 
 ## 선택 옵션
 
-- [ ] 실시간 인터랙션
+- [x] 실시간 인터랙션
 - [ ] LLM Wrapper
 - [x] Cross-Platform
 
@@ -38,7 +38,7 @@
 ## 기획안
 
 - **산출물 주제:** 스플랜더 온라인
-- **제작 목적:** 보드게임 스플랜더를 앱을 통해 다른 사람들과, 혹은 자체 학습된 AI와 함께 즐길 수 있도록 만드는 것이 목적.
+- **제작 목적:** 보드게임 스플랜더를 앱을 통해 다른 사람들과 함께 즐길 수 있도록 만드는 것이 목적.
 - **선택 옵션:** 
 - **핵심 구현 요소:**
   - 스플랜더 멀티플레이 기능
@@ -46,7 +46,7 @@
 - **사용 / 시연 시나리오:** 사용자가 어플리케이션에 접속
 
 - **팀원별 역할:**
-  - **이재준**: 프런트엔드 설계, 인공지능 모델 설계
+  - **이재준**: 프런트엔드 설계
   - **박도현**: 백엔드 설계
 
 ### 개발 일정
@@ -109,12 +109,6 @@
 |---|---|---|---|---|---|
 | POST | `/auth/register` | 이메일 회원가입 | `{"email": "hong@example.com", "password": "P@ssw0rd123", "nickname": "splendor"}` | `{"userId": "u_1024", "nickname": "스플랜더왕", "provider": "email", "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1XzEwMjQifQ.4Q2fA9k1...", "refreshToken": "rtk_3f9a8c2b1d7e4f5a6b7c8d9e0f1a2b3c", "expiresIn": 3600}` | 인증 불필요 |
 | POST | `/auth/login` | 이메일 로그인 | `{"email": "hong@example.com", "password": "P@ssw0rd123"}` | `{"userId": "u_1024", "nickname": "스플랜더왕", "provider": "email", "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1XzEwMjQifQ.4Q2fA9k1...", "refreshToken": "rtk_3f9a8c2b1d7e4f5a6b7c8d9e0f1a2b3c", "expiresIn": 3600}` | 인증 불필요, 실패 시 401 |
-| POST | `/auth/oauth/kakao` | 카카오 로그인/가입 | `{"kakaoAccessToken": "kakao_1a2b3c4d5e6f7g8h"}` | `{"userId": "u_1024", "nickname": "스플랜더왕", "provider": "kakao", "accessToken": "eyJhbGciOiJIUzI1NiJ9...", "refreshToken": "rtk_3f9a8c2b1d7e4f5a6b7c8d9e0f1a2b3c", "expiresIn": 3600, "isNewUser": false}` | Flutter `kakao_flutter_sdk`로 발급받은 토큰을 서버가 카카오 API로 검증 |
-| POST | `/auth/oauth/naver` | 네이버 로그인/가입 | `{"naverAccessToken": "naver_9z8y7x6w5v4u3t2s"}` | `{"userId": "u_1024", "nickname": "스플랜더왕", "provider": "naver", "accessToken": "eyJhbGciOiJIUzI1NiJ9...", "refreshToken": "rtk_3f9a8c2b1d7e4f5a6b7c8d9e0f1a2b3c", "expiresIn": 3600, "isNewUser": false}` | Flutter `flutter_naver_login` 사용, 서버가 네이버 API로 검증 |
-| POST | `/auth/oauth/google` | 구글 로그인/가입 | `{"idToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6ImFiYzEyMyJ9.eyJzdWIiOiIxMTIyMzM0NDU1In0.signature"}` | `{"userId": "u_1024", "nickname": "스플랜더왕", "provider": "google", "accessToken": "eyJhbGciOiJIUzI1NiJ9...", "refreshToken": "rtk_3f9a8c2b1d7e4f5a6b7c8d9e0f1a2b3c", "expiresIn": 3600, "isNewUser": false}` | Flutter `google_sign_in` 사용, 서버가 Google idToken 서명 검증 |
-| POST | `/auth/link/{provider}` | 로그인 상태에서 소셜 계정 추가 연동 | `{"providerToken": "kakao_atk_5f6a7b8c9d0e"}` | `{"linkedProviders": ["kakao", "google"]}` | provider: `kakao`\|`naver`\|`google`, 선택 기능 |
-| POST | `/auth/refresh` | Access Token 재발급 | `{"refreshToken": "rtk_3f9a8c2b1d7e4f5a6b7c8d9e0f1a2b3c"}` | `{"accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1XzEwMjQifQ.new_sig...", "expiresIn": 3600}` | Refresh Token 필요 |
-| POST | `/auth/logout` | 로그아웃 | 없음 | 204 No Content | Access Token 필요, SocialHub 연결도 함께 종료 |
 | GET | `/auth/me` | 내 계정 정보 조회 | 없음 | `{"userId": 1024, "email": "hong@example.com", "nickname": "스플랜더왕", "avatarUrl": null, "linkedProviders": ["kakao"], "createdAt": "2026-07-10T09:00:00Z"}` | 인증 필요. 2절 프로필 API와 달리 이메일·연동 계정 등 계정 자체 정보 |
 
 ---
@@ -124,9 +118,6 @@
 |---|---|---|---|---|---|
 | GET | `/profile/me` | 내 프로필 조회 | 없음 | `{"userId": 1024, "nickname": "스플랜더왕", "avatarUrl": "/profile/1024/avatar", "totalGamesPlayed": 42, "overallAvgPlace": 2.1, "rankings": [{"playerCount": 3, "rank": 357, "mmr": 1820, "gamesPlayed": 38, "avgPlace": 2.1}], "recentMatches": [{"gameId": 9911, "playerCount": 3, "place": 2, "score": 15, "isRanked": true, "playedAt": "2026-07-10T09:00:00Z"}]}` | 인증 필요. `avatarUrl`은 아바타 미설정 시 `null`, `rankings`는 참가한 인원수별로만 항목이 존재(6. 리더보드 API 참고) |
 | GET | `/profile/{userId}` | 다른 유저 프로필 조회 | 없음 | `/profile/me`와 동일 구조 | 인증 필요 |
-| POST | `/profile/avatar` | 아바타 이미지 업로드 | `multipart/form-data`, `file` 필드(png/jpeg/webp, 2MB 이하) | 갱신된 프로필 객체(`/profile/me`와 동일 구조) | 인증 필요. Content-Type 헤더뿐 아니라 파일 시그니처(매직 넘버)까지 검증, 위반 시 400(`INVALID_PAYLOAD`) |
-| DELETE | `/profile/avatar` | 아바타 이미지 삭제 | 없음 | 204 No Content | 인증 필요 |
-| GET | `/profile/{userId}/avatar` | 아바타 원본 이미지 조회 | 없음 | 이미지 바이너리(`Content-Type`은 업로드 시 형식) | 인증 불필요, 아바타 없으면 404 |
 
 닉네임/이메일 변경 API는 구현되어 있지 않습니다(가입 시 지정한 닉네임 고정). 유저 검색은 이 절이 아니라 3절의 `GET /friends/search`를 사용합니다.
 
@@ -172,15 +163,7 @@
 | GET | `/matchmaking/{playerCount}/status` | 매칭 상태 조회(폴링용) | 없음 | `{"status": "QUEUED"\|"MATCHED"\|"NOT_QUEUED", "playerCount": 4, "mmr": 1500, "searchRange": 180, "roomId": null}` | 인증 필요. 매칭 서버는 2초마다 각 인원수 대기열을 훑어 MMR이 비슷한 유저끼리 묶고(대기시간이 길어질수록 허용 범위가 넓어짐), 정원이 차면 방을 만들어 자동으로 게임을 시작함(SignalR `StateSync` 브로드캐스트). 매칭이 성사되면 대기 중이던 유저에게 SignalR `MatchFound` 이벤트(`{"roomId": ..., "playerCount": ...}`)로 즉시 알리고, 상태 조회로도 확인 가능(`status: "MATCHED"`, 1회 소비 후 사라짐). 이렇게 만들어진 방은 `GET /rooms` 목록과 `POST /rooms/{roomId}/join`으로는 접근 불가(`ROOM_RANKED_ONLY_VIA_MATCHMAKING`) |
 
 ---
-## 5. 게임 조회 API (REST, 읽기 전용)
-
-| Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
-|---|---|---|---|---|---|
-| GET | `/games/{gameId}/state` | 게임 상태 스냅샷 조회 | 없음 | GameState 객체(10.1 스키마 참고, 예: `{"gameId": "g_9911", "phase": "PLAYING", "currentPlayerId": "u_1024", "sequence": 42, "timeBankSeconds": {"u_1024": 24, "u_2048": 30}, "turnDeadlineUtc": "2026-07-14T09:21:12Z", ...}`) | 관전/디버깅/재접속 폴백용. **[변경]** `timeBankSeconds`/`turnDeadlineUtc` 필드 추가(아래 7-1. 턴 제한시간 참고) |
-| GET | `/replay/{gameId}` | 게임 리플레이 조회 | 없음 | `{"actions": [{"turnNumber": 3, "playerId": "u_1024", "actionType": "TAKE_TOKENS", "actionPayload": {"gems": ["diamond", "sapphire", "emerald"], "currentState": [게임 상태 모두 포함]}], "actionsTotal": 48}` | 리플레이용 |
-
----
-## 6. 리더보드(Leaderboard) API (REST)
+## 5. 리더보드(Leaderboard) API (REST)
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
@@ -188,7 +171,7 @@
 | GET | `/leaderboard/{playerCount}/search` | 닉네임/유저ID로 랭킹 검색 | Query: `query=스플랜더` (`playerCount`는 `2`\|`3`\|`4`, `query`가 유저ID와 정확히 일치하거나 닉네임에 포함되는 유저를 함께 검색) | `{"playerCount": 3, "query": "스플랜더", "total": 2, "entries": [{"rank": 1, "userId": "u_2048", "nickname": "스플랜더고수", "avatarUrl": "https://cdn.splendor-online.com/avatars/u_2048.png", "mmr": 2450, "avgPlace": 1.4, "gamesPlayedSeason": 124}]}` | 인증 필요, 결과는 `rank` 오름차순, 최대 100건 |
 
 ---
-## 7. GameHub 메서드 (Client → Server, Flutter `hubConnection.invoke()`)
+## 6. GameHub 메서드 (Client → Server, Flutter `hubConnection.invoke()`)
 
 Hub: `/hubs/game` · 인터페이스: `IGameHub`
 
@@ -203,10 +186,9 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
 | INVOKE | `DiscardTokens` | 토큰 10개 초과 시 반납 | `{"gems": ["ruby", "onyx"]}` | 없음(브로드캐스트) | 초과분 미반납 시 턴 종료 불가 |
 | INVOKE | `ClaimNoble` | 동시 조건 충족 시 귀족 선택 | `nobleId`: `"n_04"` (string) | 없음(브로드캐스트 `NobleAwarded`) | `NobleChoiceRequired` 수신 후에만 유효 |
 | INVOKE | `SendChatMessage` | 인게임 채팅 전송 | `{"text": "안녕하세요!"}` | 없음(브로드캐스트 `ChatMessage`) | 서버가 발신자의 친구 목록을 조회해 **같은 방에 있는 친구에게만** 전달(친구 아닌 참가자에게는 미전달) |
-| INVOKE | `SendEmote` | 감정표현(이모티콘) 전송 | `{"emoteId": "emote_thumbsup"}` | 없음(브로드캐스트 `EmoteReceived`) | 친구 제한 없이 방 전체에 브로드캐스트. `emoteId` 목록은 10.4 참고 |
 | INVOKE | `RequestResync` | 재접속 시 상태 재동기화 | `lastSequence`: `128` (int) | 호출자에게만 `StateSync`(full 또는 delta) 콜백 | 재연결(`onreconnected`) 직후 호출 |
 
-### 7-1. 턴 제한시간 (피셔 룰) **[신규]**
+### 6-1. 턴 제한시간 (피셔 룰) **[신규]**
 
 한 턴의 제한시간은 피셔 룰로 관리된다. 클라이언트가 별도로 호출할 API는 없다 — 서버가 마감을 감지해 자동으로 처리하고, 결과는 기존 `StateSync`/`TurnChanged`로 통지된다.
 
@@ -219,7 +201,7 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
   - 결과는 `StateSync`와 `TurnChanged`(`reason: "timeout"`)로 방 전체에 브로드캐스트된다.
 
 ---
-## 8. GameHub 콜백 (Server → Client, Flutter `hubConnection.on()`)
+## 7. GameHub 콜백 (Server → Client, Flutter `hubConnection.on()`)
 
 인터페이스: `IGameClient`
 
@@ -240,7 +222,7 @@ Hub: `/hubs/game` · 인터페이스: `IGameHub`
 | ON | `EmoteReceived` | 감정표현 수신 | - | `{"playerId": "u_2048", "emoteId": "emote_thumbsup", "ts": "2026-07-10T09:21:05Z"}` | 방 전체 브로드캐스트(친구 제한 없음) |
 | ON | `RoomInvite` | 비공개 방 초대 수신 | - | `{"roomId": 5566, "fromUserId": 1024, "fromNickname": "스플랜더왕", "isPrivate": true, "maxPlayers": 4}` | REST `POST /rooms/{roomId}/invites`(4절) 발생 시 대상에게 push |
 | ON | `ErrorOccurred` | 비동기 오류 통지 | - | `{"code": "NOT_YOUR_TURN", "message": "현재 당신의 턴이 아닙니다."}` | `invoke()` 예외와 별개(세션 강제종료 등) |
-## 9. SocialHub (친구 · 로비 채팅 전용, 신규)
+## 8. SocialHub (친구 · 로비 채팅 전용, 신규)
 
 Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialClient`(Server→Client)
 
@@ -248,14 +230,14 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 
 **[변경]** 동시접속 차단은 이 Hub의 연결 시점에서 강제된다 — 접속 시도 시 같은 계정의 다른 연결이 이미 있으면(`OnConnectedAsync`) 연결 자체를 거부한다(`HubException`(`ALREADY_LOGGED_IN`), 클라이언트의 `connection.start()`가 예외로 실패함). REST `/auth/login`의 `ALREADY_LOGGED_IN` 체크는 신규 로그인만 막을 뿐, 캐시된 accessToken으로 로그인 없이 재연결하는 경로(예: 탭을 닫았다 다시 여는 세션 복원)는 걸러내지 못해 이 Hub 레벨 체크가 추가됐다.
 
-### 9.1 Client → Server
+### 8.1 Client → Server
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
 | INVOKE | `SendFriendMessage` | 친구에게 1:1 채팅 전송(로비/게임 화면 무관) | `{"toUserId": "u_2048", "text": "오늘 한 판 할래?"}` | 없음(상대에게 `FriendMessageReceived` 전달) | 친구 관계 아니면 `HubException`(`NOT_FRIENDS`) |
 | INVOKE | `SetPresence` | 내 접속 상태 갱신 | `{"status": "online"}` (`online`\|`away`) | 없음(친구들에게 `FriendStatusChanged` 브로드캐스트) | `GameHub.JoinRoom` 호출 시 서버가 자동으로 `"in_game"`으로 전환, `LeaveRoom` 시 원복 |
 
-### 9.2 Server → Client
+### 8.2 Server → Client
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
@@ -269,7 +251,7 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 
 ---
 
-## 10. 에러 코드
+## 9. 에러 코드
 
 | Method | Endpoint | 설명 | 요청 | 응답 | 비고 |
 |---|---|---|---|---|---|
@@ -329,10 +311,10 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 
 | 분류 | 사용 기술 |
 |---|---|
-| 핵심 기술 |  |
-| 실행 환경 | Flutter + Flame 기반 |
-| 데이터 저장 |  |
-| 외부 API / 서비스 |  |
+| 핵심 기술 | ASP.NET + SignalR |
+| 실행 환경 | Flutter + Flame |
+| 데이터 저장 | PostegreSQL |
+| 외부 API / 서비스 | 없음 |
 | 기타 |  |
 
 ---
@@ -343,25 +325,27 @@ Hub: `/hubs/social` · 인터페이스: `ISocialHub`(Client→Server), `ISocialC
 
 ### Keep — 잘 된 점, 다음에도 유지할 것
 
--QA 진행하면서 개선점이나 버그를 공유 문서로 관리하여 문제 해결에 도움이 됨
--피드백을 적극적으로 공유하고 반영함
-
+-  QA 진행하면서 개선점이나 버그를 공유 문서로 관리하여 문제 해결에 도움이 됨
+-  피드백을 적극적으로 공유하고 반영함
+-  
 
 ### Problem — 아쉬웠던 점, 개선이 필요한 것
 
--브랜치 관리가 잘 안돼서 충돌이 일어남
--ReadMe 파일을 따르지 않은 경우가 있어 실제 구현과 ReadMe가 다른 경우가 있었음
+-  브랜치 관리가 잘 안돼서 충돌이 일어남
+-  ReadMe 파일을 따르지 않은 경우가 있어 실제 구현과 ReadMe가 다른 경우가 있었음
+-  프론트엔드에 대한 충분한 이해 없이 AI를 활용하여 코딩하다보니, 프론트엔드 구조 내 정보의 흐름 등을 이해하지 못하다가 결국 AI에게 맡겨버린 경우가 많았음
 
 ### Try — 다음번에 시도해볼 것
 
--다음에는 브랜치 관리 기법을 참고하여 레포지토리 관리
+-  다음에는 브랜치 관리 기법을 참고하여 레포지토리 관리
+-  ReadMe파일을 더 철저하게 참조하도록 명심
+-  본인이 잘 모르는 분야라면 어느정도 기초 지식을 쌓은 뒤에 구현에 임하는 게 좋을 것 같음
 
 ### 팀원별 소감
 
 **이재준:**
 
-> 
-
+> 게임을 만들어 본 게 처음인데, 이렇게 신경써야 할 것이 많았을 줄은 몰랐다. 와이어프레임 작성부터 제 처참한 디자인 감각에 좌절했었고, 화면을 실제로 구현하는 것은 기존의 백엔드 구현과 느낌이 많이 달랐다. 또한 프론트엔드가 처음이기도 했고, 구현하면서 AI를 활용하다 보니 어느 순간부터 단일 함수의 원리 뿐만 아니라 프론트 구조 내 정보의 흐름도 놓치게 된 것 같아 많이 아쉽다. 그래도 게임 앱을 만들어보면서 게임 개발에 대한 지식을 어느정도 습득할 수 있어서 좋았다.
 **박도현:**
 
 > 
