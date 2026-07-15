@@ -7,6 +7,7 @@ using Backend.Models;
 using Backend.Services;
 using Backend.Services.OAuth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -113,14 +114,74 @@ var app = builder.Build();
 await app.Services.GetRequiredService<PresenceStore>().ResetConnectionCountersAsync();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+
+// Cloudflare Tunnel이 TLS를 종료하고 cloudflared -> 컨테이너에는 평문 HTTP로 넘기므로,
+// 이 미들웨어 없이는 Kestrel이 모든 요청을 http로 인식한다(Request.Scheme=http).
+// X-Forwarded-Proto를 신뢰하도록 켜서 OpenAPI 문서의 서버 URL 등이 https로 올바르게
+// 잡히게 한다. cloudflared는 VM 호스트에서 돌고 컨테이너로는 Docker NAT를 거쳐 들어와
+// 발신 IP가 loopback이 아니므로(기본 KnownProxies/KnownNetworks는 loopback만 신뢰),
+// 두 목록을 비워 신뢰 범위를 넓힌다 — 우리가 관리하는 같은 VM의 cloudflared가 유일한
+// 발신지라 안전하다.
+var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
-    app.MapOpenApi();
-    app.UseSwaggerUI(options =>
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+};
+forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
+
+// /swagger, /openapi는 환경과 무관하게 항상 켜두되(배포 환경에서도 API 문서를 볼 수
+// 있어야 하니), Basic Auth로 가드한다. Swagger:Username/Password가 설정 안 돼있으면
+// (배포 시 .env 누락 등) 기본값으로 여는 대신 항상 401을 던져 안전한 쪽으로 실패한다.
+var swaggerUsername = app.Configuration["Swagger:Username"];
+var swaggerPassword = app.Configuration["Swagger:Password"];
+app.Use(async (context, next) =>
+{
+    if (!context.Request.Path.StartsWithSegments("/swagger") && !context.Request.Path.StartsWithSegments("/openapi"))
     {
-        options.SwaggerEndpoint("/openapi/v1.json", "Backend API v1");
-    });
-}
+        await next();
+        return;
+    }
+
+    var authorized = false;
+    if (!string.IsNullOrEmpty(swaggerUsername) && !string.IsNullOrEmpty(swaggerPassword))
+    {
+        var header = context.Request.Headers.Authorization.ToString();
+        if (header.StartsWith("Basic ", StringComparison.Ordinal))
+        {
+            try
+            {
+                var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(header["Basic ".Length..].Trim()));
+                var separatorIndex = decoded.IndexOf(':');
+                if (separatorIndex >= 0)
+                {
+                    var providedUsername = decoded[..separatorIndex];
+                    var providedPassword = decoded[(separatorIndex + 1)..];
+                    authorized = providedUsername == swaggerUsername && providedPassword == swaggerPassword;
+                }
+            }
+            catch (FormatException)
+            {
+                // 잘못된 base64 등 -> authorized는 false로 유지, 아래에서 401 응답.
+            }
+        }
+    }
+
+    if (!authorized)
+    {
+        context.Response.Headers.WWWAuthenticate = "Basic realm=\"Swagger\"";
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
+
+    await next();
+});
+
+app.MapOpenApi();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/openapi/v1.json", "Backend API v1");
+});
 
 if (!app.Environment.IsDevelopment())
 {
@@ -160,6 +221,29 @@ if (app.Environment.IsDevelopment())
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapGet("/", async (AppDbContext db, IConnectionMultiplexer redis) =>
+{
+    var dbOk = await db.Database.CanConnectAsync();
+
+    var redisOk = true;
+    try
+    {
+        await redis.GetDatabase().PingAsync();
+    }
+    catch (RedisException)
+    {
+        redisOk = false;
+    }
+
+    if (dbOk && redisOk)
+        return Results.Ok(new { status = "ok" });
+
+    return Results.Json(
+        new { status = "degraded", db = dbOk, redis = redisOk },
+        statusCode: StatusCodes.Status503ServiceUnavailable);
+})
+    .WithName("HealthCheck");
 
 app.MapAuthEndpoints();
 app.MapRoomEndpoints();
