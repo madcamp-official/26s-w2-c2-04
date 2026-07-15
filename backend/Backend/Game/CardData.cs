@@ -45,9 +45,9 @@ public static class CardData
             Cost((GemType.Sapphire, 1), (GemType.Diamond, 2)),
             Cost((GemType.Ruby, 3)),
             Cost((GemType.Diamond, 1), (GemType.Sapphire, 1), (GemType.Ruby, 1), (GemType.Onyx, 1)),
-            Cost((GemType.Diamond, 2), (GemType.Sapphire, 2)),
-            Cost((GemType.Diamond, 1), (GemType.Sapphire, 1), (GemType.Ruby, 2), (GemType.Onyx, 2)),
-            Cost((GemType.Diamond, 2), (GemType.Sapphire, 2), (GemType.Onyx, 2)),
+            Cost((GemType.Ruby, 2), (GemType.Sapphire, 2)),
+            Cost((GemType.Diamond, 1), (GemType.Sapphire, 1), (GemType.Ruby, 1), (GemType.Onyx, 2)),
+            Cost((GemType.Sapphire, 1), (GemType.Ruby, 2), (GemType.Onyx, 2)),
             Cost((GemType.Diamond, 1), (GemType.Emerald, 1), (GemType.Sapphire, 3)),
             Cost((GemType.Onyx, 4)),
         ],
@@ -107,10 +107,10 @@ public static class CardData
         // Ruby
         [
             Cost((GemType.Diamond, 2), (GemType.Ruby, 2), (GemType.Onyx, 3)),
-            Cost((GemType.Diamond, 3), (GemType.Ruby, 2), (GemType.Onyx, 3)),
+            Cost((GemType.Sapphire, 3), (GemType.Ruby, 2), (GemType.Onyx, 3)),
             Cost((GemType.Onyx, 5)),
             Cost((GemType.Diamond, 1), (GemType.Sapphire, 4), (GemType.Emerald, 2)),
-            Cost((GemType.Diamond, 3), (GemType.Sapphire, 5)),
+            Cost((GemType.Diamond, 3), (GemType.Onyx, 5)),
             Cost((GemType.Ruby, 6)),
         ],
         // Onyx
@@ -164,8 +164,8 @@ public static class CardData
     ];
 
     // 티어 내 위치별 점수. 제공된 카드 데이터에는 점수가 없어 기존 배치를 그대로 유지한다.
-    private static readonly int[] Tier1Points = [0, 0, 0, 0, 0, 0, 0, 0];
-    private static readonly int[] Tier2Points = [1, 1, 2, 2, 3, 3];
+    private static readonly int[] Tier1Points = [0, 0, 0, 0, 0, 0, 0, 1];
+    private static readonly int[] Tier2Points = [1, 1, 2, 2, 2, 3];
     private static readonly int[] Tier3Points = [3, 4, 4, 5];
 
     public static IReadOnlyList<Card> GenerateCards()

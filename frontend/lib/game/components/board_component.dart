@@ -222,16 +222,21 @@ class BoardComponent extends PositionComponent
     // 선택되지 않게 하고, 다른 5색과 헷갈리지 않도록 그 사이 간격을 두 배로
     // 띄워 그린다. 6개(5색+골드) 세로 스택 높이가 contentHeight 안에 들어오도록
     // tokenIconSize를 위에서 이미 작게(0.45) 잡아뒀다.
-    const goldExtraGap = 2; // onyx-gold 사이 간격 배수(그 외 색상 사이는 1배)
-    final tokenColumnHeight = Gem.values.length * tokenSize.y +
-        (Gem.values.length - 2) * gap +
+    // 토큰 나열 순서는 Gem.displayOrder(sapphire, ruby, emerald, onyx, diamond,
+    // gold)로 통일한다 — 보유 토큰/할인 뱅크와 같은 순서라 색 위치가 어긋나지
+    // 않는다. gold는 항상 맨 끝이라 아래 "마지막 직전 색↔gold" 사이 간격 로직은
+    // 그대로 유효하다.
+    const order = Gem.displayOrder;
+    const goldExtraGap = 2; // 5색-gold 사이 간격 배수(그 외 색상 사이는 1배)
+    final tokenColumnHeight = order.length * tokenSize.y +
+        (order.length - 2) * gap +
         goldExtraGap * gap;
     final tokenStartY = topMargin +
         ((contentHeight - tokenColumnHeight) / 2).clamp(0.0, contentHeight);
     final newGems = <GemTokenComponent>[];
     var tokenY = tokenStartY;
-    for (var i = 0; i < Gem.values.length; i++) {
-      final gem = Gem.values[i];
+    for (var i = 0; i < order.length; i++) {
+      final gem = order[i];
       final isGold = gem == Gem.gold;
       final count = state.tokenBank[gem.wireValue] ?? 0;
       final sprite = await loadSprite(GameAssets.tokenImage(gem.wireValue));
@@ -239,7 +244,7 @@ class BoardComponent extends PositionComponent
       final x = tokenColX;
       final y = tokenY;
       tokenY += tokenSize.y +
-          (i == Gem.values.length - 2 ? goldExtraGap * gap : gap);
+          (i == order.length - 2 ? goldExtraGap * gap : gap);
       newGems.add(GemTokenComponent(
         gem: gem.wireValue,
         count: count,

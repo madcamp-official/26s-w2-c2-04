@@ -258,7 +258,26 @@ class GameController extends StateNotifier<GameControllerState> {
   ) {
     if (syncedState != null) {
       _lastSequence = sequence;
-      state = GameConnected(gameState: syncedState, players: _currentRoomPlayers());
+      final current = state;
+      // 전체 StateSync(type:"full")는 매 행동마다 브로드캐스트된다. 새 GameConnected로
+      // 통째로 갈아끼우면 gameState와 무관한 부수 필드가 기본값으로 리셋되는데,
+      // 특히 turnTimeoutSeq가 0으로 돌아가는 게 문제였다: 직전에 시간초과(seq>0)가
+      // 한 번이라도 있었다면, 그 다음 "일반" 행동의 StateSync에서 seq가 1->0으로
+      // 바뀌고 play.dart가 이 변화를 시간초과로 오인해 중앙 토스트를 다시 띄웠다.
+      // 이미 연결돼 있으면 gameState/roster만 교체하고 turnTimeoutSeq·채팅 로그는
+      // 보존한다(귀족 선택/게임오버/notice는 뒤따르는 전용 이벤트가 다시 채우도록
+      // 예전처럼 리셋). 최초 연결(GameConnecting 등)에서만 새 GameConnected를 만든다.
+      if (current is GameConnected) {
+        state = GameConnected(
+          gameState: syncedState,
+          players: _currentRoomPlayers(),
+          chatLog: current.chatLog,
+          turnTimeoutSeq: current.turnTimeoutSeq,
+        );
+      } else {
+        state =
+            GameConnected(gameState: syncedState, players: _currentRoomPlayers());
+      }
       return;
     }
     if (patch != null) {

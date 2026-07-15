@@ -20,4 +20,19 @@ enum Gem {
         (g) => g.wireValue == value,
         orElse: () => Gem.values.firstWhere((g) => g.name == value.toLowerCase()),
       );
+
+  /// 토큰 뱅크(보드), 보유 토큰 뱅크, 할인(보너스) 뱅크 등 토큰을 나열하는 모든
+  /// 곳에서 항상 이 순서로 그린다: sapphire, ruby, emerald, onyx, diamond, gold.
+  /// gem_colors.dart의 gemDisplayOrder(String, 카드/귀족 비용용 — gold 제외)와 색
+  /// 순서를 맞춘 Gem enum 버전이며, gold(와일드카드)는 항상 맨 끝에 둔다. 선언
+  /// 순서(Gem.values)와 표시 순서를 분리해, enum 순서를 바꾸지 않고도 화면 배치를
+  /// 통일한다.
+  static const List<Gem> displayOrder = [
+    Gem.sapphire,
+    Gem.ruby,
+    Gem.emerald,
+    Gem.onyx,
+    Gem.diamond,
+    Gem.gold,
+  ];
 }

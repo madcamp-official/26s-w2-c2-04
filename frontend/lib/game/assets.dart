@@ -20,12 +20,16 @@ class GameAssets {
     'L3_stone', 'L3_ouroboros', 'L3_sigil', 'L3_homunculus',
   ];
 
+  // 토큰 아트는 원소 리스킨을 쓴다. 색↔파일 대응은 실제 이미지를 눈으로 확인해
+  // 맞췄다: token_wind.png는 초록 코인(=emerald), token_earth.png는 검정 코인
+  // (=onyx)이다. 예전에는 이 둘이 뒤바뀌어 있어(emerald→earth, onyx→wind) onyx를
+  // 가져가면 초록 코인이 늘어 emerald가 오르는 것처럼 보였다.
   static const Map<String, String> _tokenElementNames = {
     'diamond': 'aether',
     'sapphire': 'water',
-    'emerald': 'earth',
+    'emerald': 'wind',
     'ruby': 'fire',
-    'onyx': 'wind',
+    'onyx': 'earth',
     'gold': 'gold',
   };
 
