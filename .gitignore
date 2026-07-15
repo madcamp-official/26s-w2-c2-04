@@ -22,3 +22,8 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# 배포 시크릿(VM 로컬 전용, docker-compose.prod.yml이 참조). 절대 커밋 금지.
+.env
+.env.*
+!.env.example
