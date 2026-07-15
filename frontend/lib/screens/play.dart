@@ -1879,12 +1879,12 @@ class _TurnTimerState extends State<_TurnTimer> {
     final isWarning = remaining <= 5;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
       decoration: BoxDecoration(
         color: isWarning
             ? Colors.red.withValues(alpha: 0.15)
             : AppColors.goldFaint.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(36),
         border: Border.all(
             color: isWarning ? Colors.redAccent : AppColors.goldHairline),
       ),
@@ -1893,14 +1893,14 @@ class _TurnTimerState extends State<_TurnTimer> {
         children: [
           Icon(
             Icons.timer_outlined,
-            size: 14,
+            size: 42,
             color: isWarning ? Colors.redAccent : AppColors.gold,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 12),
           Text(
             '${remaining}s',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 36,
               fontWeight: FontWeight.w700,
               color: isWarning ? Colors.redAccent : AppColors.textHeading,
             ),
