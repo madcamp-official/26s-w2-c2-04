@@ -1,0 +1,6 @@
+# test/integration/*은 docker compose로 띄운 실제 로컬 백엔드가 필요한
+# 연동 테스트입니다. 기본 `flutter test`에서는 제외하고,
+# `flutter test --tags=integration`으로만 따로 돌립니다.
+tags:
+  integration:
+    skip: "docker compose up으로 백엔드를 띄운 뒤 --tags=integration으로 직접 실행하세요"

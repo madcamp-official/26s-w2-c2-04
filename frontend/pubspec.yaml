@@ -1,0 +1,54 @@
+name: splendor_multiplayer
+description: Flutter + Flame 기반 크로스 플랫폼 스플렌더 멀티플레이 게임
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: ">=3.19.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- 게임 엔진 ---
+  flame: ^1.37.0                # Flame 코어 엔진
+  # flame_audio: ^2.10.0        # 필요 시 사운드 이펙트/BGM
+
+  # --- 상태관리 ---
+  flutter_riverpod: ^2.5.1      # 앱 전역 상태 (game_state, connection_state 등)
+
+  # --- 네트워킹 (멀티플레이) ---
+  web_socket_channel: ^3.0.3    # 실시간 통신 (턴/이벤트 브로드캐스트)
+  http: ^1.2.1                 # 로그인/매칭메이킹 등 REST 호출
+  signalr_netcore: ^1.4.4       # GameHub/SocialHub(SignalR) 클라이언트
+
+  # --- 데이터 모델 / 직렬화 ---
+  freezed_annotation: ^2.4.1    # 불변 모델 + copyWith
+  json_annotation: ^4.9.0       # JSON 직렬화 어노테이션
+  json_patch: ^3.0.0            # StateSync delta(JSON Patch, RFC6902) 적용
+
+  # --- 기타 유틸 ---
+  uuid: ^4.4.0                  # 플레이어/방 ID 생성
+  equatable: ^2.0.5              # 모델 값 비교 (freezed 안 쓸 경우 대체)
+  flutter_secure_storage: ^10.3.1 # accessToken/refreshToken 영속 저장
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+  # --- 코드 생성 (freezed/json_serializable용) ---
+  build_runner: ^2.4.11
+  freezed: ^2.5.2
+  json_serializable: ^6.8.0
+
+flutter:
+  uses-material-design: true
+
+  # Flutter는 여러 이유로, 프로젝트 폴더에 파일이 있따고 자동으로 앱에 포함시키지 X
+  # 앱에 패키징할 파일을 assets항목에 명시적으로 적어줘야
+  assets:
+    - assets/image/cards/
+    - assets/image/nobles/
+    - assets/image/tokens/
